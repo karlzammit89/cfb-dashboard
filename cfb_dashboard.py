@@ -72,32 +72,55 @@ with st.sidebar:
         "by CFBD's ingest pipeline — far more reliable than ESPN's `modified` field."
     )
     st.markdown("---")
-    st.subheader("🔧 Manual Game Override")
-    st.markdown(
-        "If a game fails to match automatically, find its CFBD ID at "
-        "[collegefootballdata.com](https://collegefootballdata.com) "
-        "and paste it here."
-    )
-    manual_id_str  = st.text_input("CFBD Game ID", placeholder="e.g. 401628432", key="manual_id_input")
-    manual_away    = st.text_input("Away team abbr", placeholder="e.g. MIA", key="manual_away")
-    manual_home    = st.text_input("Home team abbr", placeholder="e.g. IU",  key="manual_home")
-    manual_away_eid = st.text_input("Away ESPN team ID (for logo)", placeholder="e.g. 2390", key="manual_away_eid")
-    manual_home_eid = st.text_input("Home ESPN team ID (for logo)", placeholder="e.g. 84",   key="manual_home_eid")
-    if st.button("▶ Load Manual Game", key="manual_load"):
-        if manual_id_str.strip().isdigit():
-            for k in ("cached_events", "cached_game_id", "filtered_events"):
-                st.session_state[k] = None
-            st.session_state.filters_applied      = False
-            st.session_state.selected_cfbd_id     = int(manual_id_str.strip())
-            st.session_state.selected_away_name   = manual_away or "Away"
-            st.session_state.selected_home_name   = manual_home or "Home"
-            st.session_state.selected_away_abbr   = manual_away or "AWY"
-            st.session_state.selected_home_abbr   = manual_home or "HME"
-            st.session_state.selected_away_eid    = manual_away_eid.strip() or ""
-            st.session_state.selected_home_eid    = manual_home_eid.strip() or ""
-            st.rerun()
-        else:
-            st.error("Please enter a valid numeric CFBD Game ID.")
+    st.subheader("🔍 Search Games by ID")
+    st.markdown("Use this if a game fails to auto-match. Search by team name to find the CFBD game ID, then load it directly.")
+
+    search_team = st.text_input("Team name", placeholder="e.g. Miami", key="id_search_team")
+    search_year = st.number_input("Season year", min_value=2000, max_value=2030,
+                                  value=datetime.today().year if datetime.today().month > 7 else datetime.today().year - 1,
+                                  step=1, key="id_search_year")
+    search_type = st.selectbox("Season type", ["both", "regular", "postseason"], key="id_search_type")
+
+    if st.button("🔎 Find Games", key="id_search_btn") and search_team.strip() and cfbd_key:
+        try:
+            r = requests.get(
+                f"{CFBD_BASE}/games",
+                headers={"Authorization": f"Bearer {cfbd_key}"},
+                params={"year": int(search_year), "team": search_team.strip(), "seasonType": search_type},
+                timeout=10,
+            )
+            r.raise_for_status()
+            found = r.json()
+            if found:
+                st.session_state["id_search_results"] = found
+            else:
+                st.session_state["id_search_results"] = []
+                st.warning("No games found — try a different team name or year.")
+        except Exception as e:
+            st.error(f"Search failed: {e}")
+
+    results = st.session_state.get("id_search_results", [])
+    if results:
+        st.markdown(f"**{len(results)} game(s) found — pick one to load:**")
+        for g in sorted(results, key=lambda x: x.get("start_date", ""), reverse=True):
+            g_date  = (g.get("start_date") or "")[:10]
+            g_away  = g.get("away_team", "?")
+            g_home  = g.get("home_team", "?")
+            g_id    = g.get("id")
+            g_label = f"{g_away} @ {g_home}  ·  {g_date}  ·  ID: {g_id}"
+            if st.button(g_label, key=f"manual_pick_{g_id}"):
+                for k in ("cached_events", "cached_game_id", "filtered_events"):
+                    st.session_state[k] = None
+                st.session_state.filters_applied    = False
+                st.session_state.selected_cfbd_id   = g_id
+                st.session_state.selected_away_name = g_away
+                st.session_state.selected_home_name = g_home
+                st.session_state.selected_away_abbr = g_away[:4].upper()
+                st.session_state.selected_home_abbr = g_home[:4].upper()
+                st.session_state.selected_away_eid  = ""
+                st.session_state.selected_home_eid  = ""
+                st.session_state["id_search_results"] = []
+                st.rerun()
 
 # ──────────────────────────────────────────────────────────────
 # SESSION STATE
