@@ -150,33 +150,42 @@ def _norm(name: str) -> str:
         " owls", " cardinals", " red raiders", " horned frogs", " mustangs",
         " mean green", " bobcats", " roadrunners", " miners", " lobos",
         " aztecs", " rainbow warriors", " 49ers", " tritons",
+        " hurricanes", " demon deacons", " golden flashes", " golden gophers",
+        " golden bears", " golden eagles", " blue hens", " scarlet knights",
+        " terrapins", " terps", " cavaliers", " hokies", " yellow jackets",
+        " thundering herd", " red wolves", " ragin cajuns", " hilltoppers",
+        " flames", " flames", " bearcats", " golden panthers", " knights",
+        " cardinals", " leopards", " greyhounds", " bison", " anteaters",
     ]:
         name = name.replace(token, "")
     # well-known ESPN↔CFBD mismatches
     aliases = {
-        "mississippi":        "ole miss",
-        "louisiana state":    "lsu",
-        "southern california":"usc",
-        "miami (fl)":         "miami",
-        "miami (ohio)":       "miami (oh)",
-        "pittsburgh":         "pitt",
-        "nevada las vegas":   "unlv",
-        "texas christian":    "tcu",
-        "brigham young":      "byu",
-        "central florida":    "ucf",
-        "southern methodist": "smu",
-        "florida international": "fiu",
-        "middle tennessee":   "middle tennessee",
-        "ut san antonio":     "utsa",
-        "ut el paso":         "utep",
-        "hawaii":             "hawai'i",
+        "mississippi":          "ole miss",
+        "louisiana state":      "lsu",
+        "southern california":  "usc",
+        "miami (fl)":           "miami",
+        "miami (ohio)":         "miami (oh)",
+        "miami":                "miami",          # ESPN "Miami Hurricanes" → just "miami" → CFBD "Miami"
+        "indiana":              "indiana",        # already correct, keep explicit
+        "pittsburgh":           "pitt",
+        "nevada las vegas":     "unlv",
+        "texas christian":      "tcu",
+        "brigham young":        "byu",
+        "central florida":      "ucf",
+        "southern methodist":   "smu",
+        "florida international":"fiu",
+        "middle tennessee":     "middle tennessee",
+        "ut san antonio":       "utsa",
+        "ut el paso":           "utep",
+        "hawaii":               "hawai'i",
+        "north carolina":       "north carolina",
         "north carolina state": "nc state",
-        "massachusetts":      "umass",
-        "connecticut":        "uconn",
-        "illinois":           "illinois",
-        "army west point":    "army",
-        "navy":               "navy",
-        "air force":          "air force",
+        "massachusetts":        "umass",
+        "connecticut":          "uconn",
+        "army west point":      "army",
+        "louisiana":            "louisiana",
+        "appalachian":          "appalachian state",
+        "ole miss":             "ole miss",
     }
     name = name.strip()
     return aliases.get(name, name)
@@ -234,8 +243,9 @@ def parse_espn_schedule(date_str: str) -> list:
             "is_ot":       period > 4 and (is_final or is_live),
             "venue":       comp.get("venue", {}).get("fullName", ""),
             # used for CFBD lookup
+            # Bowl games played in Jan/Feb belong to the PREVIOUS year's season in CFBD
             "game_date":   et_dt.date().isoformat() if et_dt else "",
-            "season_year": et_dt.year if et_dt else datetime.today().year,
+            "season_year": (et_dt.year - 1) if (et_dt and et_dt.month <= 2) else (et_dt.year if et_dt else datetime.today().year),
         })
 
     return sorted(games, key=lambda x: x["time_str"])
@@ -277,8 +287,8 @@ def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_yea
     away_norm = _norm(away_name)
     home_norm = _norm(home_name)
 
-    # Search using both ESPN names AND their normalised forms
-    search_terms = list(dict.fromkeys([home_name, away_name, home_norm, away_norm]))
+    # Search using normalised forms first (cleaner for CFBD), then full ESPN names as fallback
+    search_terms = list(dict.fromkeys([home_norm, away_norm, home_name, away_name]))
 
     for term in search_terms:
         candidate_games = search(term)
