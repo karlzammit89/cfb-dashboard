@@ -135,10 +135,51 @@ def _emoji(play_type: str, desc: str, is_scoring: bool) -> str:
     return "🏈"
 
 def _norm(name: str) -> str:
-    """Lower-case, strip common suffixes for fuzzy team-name matching."""
-    for suffix in [" university", " college", " state", " st."]:
-        name = name.lower().replace(suffix, "")
-    return name.strip()
+    """Aggressively normalise a team name for fuzzy matching."""
+    name = name.lower().strip()
+    # remove common words that differ between ESPN and CFBD
+    for token in [
+        " university", " college", " state", " st.", " a&m",
+        " crimson tide", " tigers", " bulldogs", " gators", " seminoles",
+        " volunteers", " rebels", " wildcats", " tar heels", " blue devils",
+        " longhorns", " sooners", " cornhuskers", " buckeyes", " wolverines",
+        " nittany lions", " fighting irish", " spartans", " hoosiers",
+        " aggies", " cowboys", " bears", " rams", " eagles", " panthers",
+        " mountaineers", " razorbacks", " gamecocks", " trojans", " bruins",
+        " ducks", " beavers", " huskies", " cougars", " utes", " falcons",
+        " owls", " cardinals", " red raiders", " horned frogs", " mustangs",
+        " mean green", " bobcats", " roadrunners", " miners", " lobos",
+        " aztecs", " rainbow warriors", " 49ers", " tritons",
+    ]:
+        name = name.replace(token, "")
+    # well-known ESPN↔CFBD mismatches
+    aliases = {
+        "mississippi":        "ole miss",
+        "louisiana state":    "lsu",
+        "southern california":"usc",
+        "miami (fl)":         "miami",
+        "miami (ohio)":       "miami (oh)",
+        "pittsburgh":         "pitt",
+        "nevada las vegas":   "unlv",
+        "texas christian":    "tcu",
+        "brigham young":      "byu",
+        "central florida":    "ucf",
+        "southern methodist": "smu",
+        "florida international": "fiu",
+        "middle tennessee":   "middle tennessee",
+        "ut san antonio":     "utsa",
+        "ut el paso":         "utep",
+        "hawaii":             "hawai'i",
+        "north carolina state": "nc state",
+        "massachusetts":      "umass",
+        "connecticut":        "uconn",
+        "illinois":           "illinois",
+        "army west point":    "army",
+        "navy":               "navy",
+        "air force":          "air force",
+    }
+    name = name.strip()
+    return aliases.get(name, name)
 
 # ──────────────────────────────────────────────────────────────
 # ESPN — SCHEDULE  (no API key, date-based)
@@ -203,12 +244,22 @@ def parse_espn_schedule(date_str: str) -> list:
 # CFBD — GAME ID LOOKUP
 # Matches ESPN game → CFBD integer ID by team name + date
 # ──────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner=False)
-def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_year: int) -> int | None:
+def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_year: int):
     """
-    Query CFBD /games for each team; return the game ID where both
-    teams appear on the same date.  Falls back to fuzzy _norm() match.
+    Returns (cfbd_id, debug_info) where debug_info is a dict describing
+    what was tried, so the UI can show the user exactly what happened.
     """
+    debug = {
+        "espn_away":    away_name,
+        "espn_home":    home_name,
+        "game_date":    game_date,
+        "season_year":  season_year,
+        "norm_away":    _norm(away_name),
+        "norm_home":    _norm(home_name),
+        "searches":     [],
+        "candidates_on_date": [],
+    }
+
     def search(team: str):
         try:
             r = requests.get(
@@ -219,26 +270,54 @@ def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_yea
             )
             r.raise_for_status()
             return r.json()
-        except Exception:
+        except Exception as e:
+            debug["searches"].append({"team": team, "error": str(e)})
             return []
 
     away_norm = _norm(away_name)
     home_norm = _norm(home_name)
 
-    for candidate_games in [search(home_name), search(away_name)]:
+    # Search using both ESPN names AND their normalised forms
+    search_terms = list(dict.fromkeys([home_name, away_name, home_norm, away_norm]))
+
+    for term in search_terms:
+        candidate_games = search(term)
+        debug["searches"].append({"term": term, "results": len(candidate_games)})
+
         for g in candidate_games:
-            g_date  = (g.get("start_date") or "")[:10]
-            g_away  = _norm(g.get("away_team", ""))
-            g_home  = _norm(g.get("home_team", ""))
-            teams   = {g_away, g_home}
-            if g_date == game_date and away_norm in teams and home_norm in teams:
-                return g.get("id")
-            # looser: substring match handles "Alabama" vs "Alabama Crimson Tide"
-            if g_date == game_date:
-                if any(away_norm in t or t in away_norm for t in teams) and \
-                   any(home_norm in t or t in home_norm for t in teams):
-                    return g.get("id")
-    return None
+            g_date = (g.get("start_date") or "")[:10]
+            if g_date != game_date:
+                continue
+
+            g_away_raw  = g.get("away_team", "")
+            g_home_raw  = g.get("home_team", "")
+            g_away_norm = _norm(g_away_raw)
+            g_home_norm = _norm(g_home_raw)
+
+            debug["candidates_on_date"].append({
+                "cfbd_away": g_away_raw,
+                "cfbd_home": g_home_raw,
+                "norm_away": g_away_norm,
+                "norm_home": g_home_norm,
+                "id":        g.get("id"),
+            })
+
+            # Pass 1 — exact normalised match
+            if away_norm == g_away_norm and home_norm == g_home_norm:
+                return g.get("id"), debug
+            if away_norm == g_home_norm and home_norm == g_away_norm:
+                return g.get("id"), debug
+
+            # Pass 2 — substring in either direction
+            def sub_match(a, b):
+                return a in b or b in a
+
+            away_hit = sub_match(away_norm, g_away_norm) or sub_match(away_norm, g_home_norm)
+            home_hit = sub_match(home_norm, g_home_norm) or sub_match(home_norm, g_away_norm)
+            if away_hit and home_hit:
+                return g.get("id"), debug
+
+    return None, debug
 
 # ──────────────────────────────────────────────────────────────
 # CFBD — PLAY-BY-PLAY  (wallclock field = time-of-play UTC)
@@ -545,16 +624,41 @@ else:
                     disabled=(not cfbd_key),
                 ):
                     with st.spinner("Matching game in CFBD…"):
-                        cfbd_id = cfbd_find_game_id(
+                        cfbd_id, debug = cfbd_find_game_id(
                             g["away_name"], g["home_name"],
                             g["game_date"], g["season_year"],
                         )
                     if not cfbd_id:
                         st.error(
-                            "Could not match this game in CollegeFootballData.com. "
-                            "Try again after the game is indexed (usually within an hour of final whistle), "
-                            "or the team name may not have matched."
+                            f"Could not match **{g['away_abbr']} @ {g['home_abbr']}** "
+                            f"in CollegeFootballData.com. See debug info below."
                         )
+                        with st.expander("🔍 Debug — what was tried", expanded=True):
+                            st.markdown(f"**ESPN sent:** `{debug['espn_away']}` @ `{debug['espn_home']}`")
+                            st.markdown(f"**Normalised to:** `{debug['norm_away']}` @ `{debug['norm_home']}`")
+                            st.markdown(f"**Date searched:** `{debug['game_date']}`  |  **Season:** `{debug['season_year']}`")
+                            st.markdown("**API searches made:**")
+                            for s in debug["searches"]:
+                                if "error" in s:
+                                    st.markdown(f"- `{s.get('term','?')}` → ❌ error: {s['error']}")
+                                else:
+                                    st.markdown(f"- `{s.get('term','?')}` → {s['results']} game(s) returned")
+                            if debug["candidates_on_date"]:
+                                st.markdown(f"**Games found on {debug['game_date']} (CFBD names):**")
+                                for c in debug["candidates_on_date"]:
+                                    st.markdown(
+                                        f"- `{c['cfbd_away']}` @ `{c['cfbd_home']}` "
+                                        f"(normalised: `{c['norm_away']}` @ `{c['norm_home']}`)"
+                                    )
+                                st.info(
+                                    "👆 Copy the CFBD team name(s) above and report them — "
+                                    "they can be added to the alias table to fix this automatically."
+                                )
+                            else:
+                                st.warning(
+                                    "No games found on this date in CFBD at all. "
+                                    "The game may not be indexed yet — try again after the final whistle."
+                                )
                     else:
                         for k in ("cached_events", "cached_game_id", "filtered_events"):
                             st.session_state[k] = None
