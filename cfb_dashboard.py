@@ -71,6 +71,33 @@ with st.sidebar:
         "Play-by-play `wallclock` timestamps are set at time-of-play "
         "by CFBD's ingest pipeline — far more reliable than ESPN's `modified` field."
     )
+    st.markdown("---")
+    st.subheader("🔧 Manual Game Override")
+    st.markdown(
+        "If a game fails to match automatically, find its CFBD ID at "
+        "[collegefootballdata.com](https://collegefootballdata.com) "
+        "and paste it here."
+    )
+    manual_id_str  = st.text_input("CFBD Game ID", placeholder="e.g. 401628432", key="manual_id_input")
+    manual_away    = st.text_input("Away team abbr", placeholder="e.g. MIA", key="manual_away")
+    manual_home    = st.text_input("Home team abbr", placeholder="e.g. IU",  key="manual_home")
+    manual_away_eid = st.text_input("Away ESPN team ID (for logo)", placeholder="e.g. 2390", key="manual_away_eid")
+    manual_home_eid = st.text_input("Home ESPN team ID (for logo)", placeholder="e.g. 84",   key="manual_home_eid")
+    if st.button("▶ Load Manual Game", key="manual_load"):
+        if manual_id_str.strip().isdigit():
+            for k in ("cached_events", "cached_game_id", "filtered_events"):
+                st.session_state[k] = None
+            st.session_state.filters_applied      = False
+            st.session_state.selected_cfbd_id     = int(manual_id_str.strip())
+            st.session_state.selected_away_name   = manual_away or "Away"
+            st.session_state.selected_home_name   = manual_home or "Home"
+            st.session_state.selected_away_abbr   = manual_away or "AWY"
+            st.session_state.selected_home_abbr   = manual_home or "HME"
+            st.session_state.selected_away_eid    = manual_away_eid.strip() or ""
+            st.session_state.selected_home_eid    = manual_home_eid.strip() or ""
+            st.rerun()
+        else:
+            st.error("Please enter a valid numeric CFBD Game ID.")
 
 # ──────────────────────────────────────────────────────────────
 # SESSION STATE
@@ -301,6 +328,11 @@ def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_yea
     for term in search_terms:
         candidate_games = search(term)
         debug["searches"].append({"term": term, "results": len(candidate_games)})
+        # Record ALL dates returned so user can see what CFBD actually has
+        if candidate_games and "all_cfbd_dates" not in debug:
+            debug["all_cfbd_dates"] = sorted(
+                set((g.get("start_date") or "")[:10] for g in candidate_games)
+            )
 
         for g in candidate_games:
             g_date = (g.get("start_date") or "")[:10]
@@ -687,9 +719,18 @@ else:
                                 )
                             else:
                                 st.warning(
-                                    "No games found on this date in CFBD at all. "
-                                    "The game may not be indexed yet — try again after the final whistle."
+                                    "No games were found near this date in CFBD. "
+                                    "This bowl game may not be indexed yet — CFBD can take "
+                                    "several days to add postseason games after they are played."
                                 )
+                                if debug.get("all_cfbd_dates"):
+                                    st.markdown("**Dates CFBD actually has for this team (season 2025):**")
+                                    st.code(", ".join(debug["all_cfbd_dates"]))
+                                    st.markdown(
+                                        "If you see the right game date above but it didn't match, "
+                                        "report it and the team names will be fixed."
+                                    )
+                                st.markdown("👈 **Use the Manual Game Override in the sidebar** to load by CFBD game ID directly.")
                     else:
                         for k in ("cached_events", "cached_game_id", "filtered_events"):
                             st.session_state[k] = None
