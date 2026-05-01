@@ -102,12 +102,16 @@ with st.sidebar:
     results = st.session_state.get("id_search_results", [])
     if results:
         st.markdown(f"**{len(results)} game(s) found — pick one to load:**")
-        for g in sorted(results, key=lambda x: x.get("start_date", ""), reverse=True):
-            g_date  = (g.get("start_date") or "")[:10]
-            g_away  = g.get("away_team", "?")
-            g_home  = g.get("home_team", "?")
+        for g in sorted(results, key=lambda x: x.get("startDate", x.get("start_date", "")), reverse=True):
+            # CFBD API v5 uses camelCase; fall back to snake_case for older responses
+            g_date  = (g.get("startDate") or g.get("start_date") or "")[:10]
+            g_away  = g.get("awayTeam")  or g.get("away_team")  or "?"
+            g_home  = g.get("homeTeam")  or g.get("home_team")  or "?"
+            g_away_pts = g.get("awayPoints") or g.get("away_points") or ""
+            g_home_pts = g.get("homePoints") or g.get("home_points") or ""
             g_id    = g.get("id")
-            g_label = f"{g_away} @ {g_home}  ·  {g_date}  ·  ID: {g_id}"
+            score_str = f"  ({g_away_pts}–{g_home_pts})" if g_away_pts != "" else ""
+            g_label = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  ID: {g_id}"
             if st.button(g_label, key=f"manual_pick_{g_id}"):
                 for k in ("cached_events", "cached_game_id", "filtered_events"):
                     st.session_state[k] = None
@@ -358,7 +362,7 @@ def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_yea
             )
 
         for g in candidate_games:
-            g_date = (g.get("start_date") or "")[:10]
+            g_date = (g.get("startDate") or g.get("start_date") or "")[:10]
 
             # Allow ±1 day — CFBD stores dates in UTC so a late-night ET
             # kickoff can land on the next calendar day, and some bowl games
@@ -376,8 +380,8 @@ def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_yea
             if not date_ok:
                 continue
 
-            g_away_raw  = g.get("away_team", "")
-            g_home_raw  = g.get("home_team", "")
+            g_away_raw  = g.get("awayTeam") or g.get("away_team") or ""
+            g_home_raw  = g.get("homeTeam") or g.get("home_team") or ""
             g_away_norm = _norm(g_away_raw)
             g_home_norm = _norm(g_home_raw)
 
@@ -431,23 +435,23 @@ def get_events(cfbd_id: int) -> list:
 
     for p in raw:
         period_num = p.get("period", 0)
-        desc       = p.get("playText", "") or ""
-        play_type  = p.get("playType", "") or ""
-        clock_val  = p.get("clock", "") or ""
-        away_sc    = int(p.get("awayScore", 0) or 0)
-        home_sc    = int(p.get("homeScore", 0) or 0)
+        desc       = p.get("playText") or p.get("play_text") or ""
+        play_type  = p.get("playType") or p.get("play_type") or ""
+        clock_val  = p.get("clock") or p.get("clockTime") or ""
+        away_sc    = int(p.get("awayScore") or p.get("away_score") or 0)
+        home_sc    = int(p.get("homeScore") or p.get("home_score") or 0)
         total      = away_sc + home_sc
         is_score   = total > prev_total
         prev_total = total
 
         # ── WALLCLOCK ── dedicated field, set at time-of-play
-        action_dt = to_et(p.get("wallclock", ""))
+        action_dt = to_et(p.get("wallclock") or p.get("wallClock") or "")
 
         # Down & distance
-        down     = p.get("down", 0) or 0
-        distance = p.get("distance", 0) or 0
-        yard_line = p.get("yardLine", 0) or 0
-        offense  = p.get("offense", "") or ""
+        down      = p.get("down") or 0
+        distance  = p.get("distance") or 0
+        yard_line = p.get("yardLine") or p.get("yard_line") or 0
+        offense   = p.get("offense") or p.get("offenseTeam") or ""
 
         down_str = ""
         if down > 0:
@@ -468,9 +472,9 @@ def get_events(cfbd_id: int) -> list:
             "action_dt":     action_dt,
             "action_dt_str": fmt_full_et(action_dt),
             "down_str":      down_str,
-            "yards_gained":  p.get("yardsGained"),
+            "yards_gained":  p.get("yardsGained") or p.get("yards_gained"),
             "offense":       offense,
-            "defense":       p.get("defense", "") or "",
+            "defense":       p.get("defense") or p.get("defenseTeam") or "",
             "emoji":         _emoji(play_type, desc, is_score),
         })
 
