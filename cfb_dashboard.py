@@ -87,10 +87,12 @@ with st.sidebar:
         debug_game_id = st.text_input("Game ID to inspect", placeholder="e.g. 401628432", key="debug_game_id")
         if st.button("Fetch raw plays", key="debug_fetch") and debug_game_id.strip() and cfbd_key:
             try:
+                debug_year = st.session_state.get("selected_year") or int(search_year)
+                debug_week = st.session_state.get("selected_week") or 1
                 r = requests.get(
                     f"{CFBD_BASE}/plays",
                     headers={"Authorization": f"Bearer {cfbd_key}"},
-                    params={"gameId": debug_game_id.strip()},
+                    params={"gameId": debug_game_id.strip(), "year": debug_year, "week": debug_week},
                     timeout=15,
                 )
                 st.markdown(f"**Status:** {r.status_code}")
@@ -144,10 +146,13 @@ with st.sidebar:
             g_home_pts = g.get("homePoints") or g.get("home_points") or ""
             g_id    = g.get("id")
             score_str = f"  ({g_away_pts}–{g_home_pts})" if g_away_pts != "" else ""
-            g_label = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  ID: {g_id}"
+            g_week_num = g.get("week") or "?"
+            g_label = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  Wk {g_week_num}  ·  ID: {g_id}"
             if st.button(g_label, key=f"manual_pick_{g_id}"):
                 for k in ("cached_events", "cached_game_id", "filtered_events"):
                     st.session_state[k] = None
+                g_year = int((g.get("season") or g.get("year") or search_year))
+                g_week = int((g.get("week") or 1))
                 st.session_state.filters_applied    = False
                 st.session_state.selected_cfbd_id   = g_id
                 st.session_state.selected_away_name = g_away
@@ -156,6 +161,8 @@ with st.sidebar:
                 st.session_state.selected_home_abbr = g_home[:4].upper()
                 st.session_state.selected_away_eid  = ""
                 st.session_state.selected_home_eid  = ""
+                st.session_state.selected_year      = g_year
+                st.session_state.selected_week      = g_week
                 st.session_state["id_search_results"] = []
                 st.rerun()
 
@@ -170,6 +177,8 @@ _defaults = {
     "selected_home_abbr": "",
     "selected_away_eid":  None,   # ESPN team ID (for logo URL)
     "selected_home_eid":  None,
+    "selected_year":      None,   # CFBD season year for /plays
+    "selected_week":      None,   # CFBD week for /plays
     "cached_events":      None,
     "cached_game_id":     None,
     "filtered_events":    None,
@@ -427,42 +436,47 @@ def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_yea
                 "id":        g.get("id"),
             })
 
+            g_week = g.get("week") or 1
+
             # Pass 1 — exact normalised match (either home/away orientation)
             if away_norm == g_away_norm and home_norm == g_home_norm:
-                return g.get("id"), debug
+                return g.get("id"), g_week, debug
             if away_norm == g_home_norm and home_norm == g_away_norm:
-                return g.get("id"), debug
+                return g.get("id"), g_week, debug
 
             # Pass 2 — substring match (handles truncated/partial names)
             away_hit = sub_match(away_norm, g_away_norm) or sub_match(away_norm, g_home_norm)
             home_hit = sub_match(home_norm, g_home_norm) or sub_match(home_norm, g_away_norm)
             if away_hit and home_hit:
-                return g.get("id"), debug
+                return g.get("id"), g_week, debug
 
-    return None, debug
+    return None, None, debug
 
 # ──────────────────────────────────────────────────────────────
 # CFBD — PLAY-BY-PLAY  (wallclock field = time-of-play UTC)
 # ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60, show_spinner=False)
-def cfbd_fetch_plays(game_id: int) -> list:
+def cfbd_fetch_plays(game_id: int, year: int, week: int) -> list:
     try:
         r = requests.get(
             f"{CFBD_BASE}/plays",
             headers=cfbd_headers(),
-            params={"gameId": game_id},
+            params={"gameId": game_id, "year": year, "week": week},
             timeout=15,
         )
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        if isinstance(data, list):
+            return data
+        return []
     except Exception:
         return []
 
-def get_events(cfbd_id: int) -> list:
+def get_events(cfbd_id: int, year: int, week: int) -> list:
     if st.session_state.cached_game_id == cfbd_id and st.session_state.cached_events is not None:
         return st.session_state.cached_events
 
-    raw        = cfbd_fetch_plays(cfbd_id)
+    raw        = cfbd_fetch_plays(cfbd_id, year, week)
     events     = []
     prev_total = 0
 
@@ -535,8 +549,10 @@ if st.session_state.selected_cfbd_id:
         st.session_state.selected_cfbd_id = None
         st.rerun()
 
+    g_year = st.session_state.get("selected_year") or datetime.today().year
+    g_week = st.session_state.get("selected_week") or 1
     with st.spinner("Loading play-by-play from CollegeFootballData.com…"):
-        events = get_events(cfbd_id)
+        events = get_events(cfbd_id, g_year, g_week)
 
     if not events:
         st.warning(
@@ -746,7 +762,7 @@ else:
                     disabled=(not cfbd_key),
                 ):
                     with st.spinner("Matching game in CFBD…"):
-                        cfbd_id, debug = cfbd_find_game_id(
+                        cfbd_id, cfbd_week, debug = cfbd_find_game_id(
                             g["away_name"], g["home_name"],
                             g["game_date"], g["season_year"],
                         )
@@ -802,4 +818,6 @@ else:
                         st.session_state.selected_home_abbr   = g["home_abbr"]
                         st.session_state.selected_away_eid    = g["away_eid"]
                         st.session_state.selected_home_eid    = g["home_eid"]
+                        st.session_state.selected_year        = g["season_year"]
+                        st.session_state.selected_week        = cfbd_week
                         st.rerun()
