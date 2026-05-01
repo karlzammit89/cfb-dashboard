@@ -290,13 +290,35 @@ def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_yea
     # Search using normalised forms first (cleaner for CFBD), then full ESPN names as fallback
     search_terms = list(dict.fromkeys([home_norm, away_norm, home_name, away_name]))
 
+    try:
+        tgt_dt = datetime.strptime(game_date, "%Y-%m-%d").date()
+    except Exception:
+        tgt_dt = None
+
+    def sub_match(a, b):
+        return a in b or b in a
+
     for term in search_terms:
         candidate_games = search(term)
         debug["searches"].append({"term": term, "results": len(candidate_games)})
 
         for g in candidate_games:
             g_date = (g.get("start_date") or "")[:10]
-            if g_date != game_date:
+
+            # Allow ±1 day — CFBD stores dates in UTC so a late-night ET
+            # kickoff can land on the next calendar day, and some bowl games
+            # are indexed with a slight date offset.
+            date_ok = False
+            if tgt_dt:
+                try:
+                    g_dt = datetime.strptime(g_date, "%Y-%m-%d").date()
+                    date_ok = abs((g_dt - tgt_dt).days) <= 1
+                except Exception:
+                    date_ok = (g_date == game_date)
+            else:
+                date_ok = (g_date == game_date)
+
+            if not date_ok:
                 continue
 
             g_away_raw  = g.get("away_team", "")
@@ -307,21 +329,19 @@ def cfbd_find_game_id(away_name: str, home_name: str, game_date: str, season_yea
             debug["candidates_on_date"].append({
                 "cfbd_away": g_away_raw,
                 "cfbd_home": g_home_raw,
+                "cfbd_date": g_date,
                 "norm_away": g_away_norm,
                 "norm_home": g_home_norm,
                 "id":        g.get("id"),
             })
 
-            # Pass 1 — exact normalised match
+            # Pass 1 — exact normalised match (either home/away orientation)
             if away_norm == g_away_norm and home_norm == g_home_norm:
                 return g.get("id"), debug
             if away_norm == g_home_norm and home_norm == g_away_norm:
                 return g.get("id"), debug
 
-            # Pass 2 — substring in either direction
-            def sub_match(a, b):
-                return a in b or b in a
-
+            # Pass 2 — substring match (handles truncated/partial names)
             away_hit = sub_match(away_norm, g_away_norm) or sub_match(away_norm, g_home_norm)
             home_hit = sub_match(home_norm, g_home_norm) or sub_match(home_norm, g_away_norm)
             if away_hit and home_hit:
@@ -654,11 +674,12 @@ else:
                                 else:
                                     st.markdown(f"- `{s.get('term','?')}` → {s['results']} game(s) returned")
                             if debug["candidates_on_date"]:
-                                st.markdown(f"**Games found on {debug['game_date']} (CFBD names):**")
+                                st.markdown(f"**Games found near {debug['game_date']} in CFBD:**")
                                 for c in debug["candidates_on_date"]:
                                     st.markdown(
                                         f"- `{c['cfbd_away']}` @ `{c['cfbd_home']}` "
-                                        f"(normalised: `{c['norm_away']}` @ `{c['norm_home']}`)"
+                                        f"· CFBD date: `{c.get('cfbd_date','?')}` "
+                                        f"· normalised: `{c['norm_away']}` @ `{c['norm_home']}`"
                                     )
                                 st.info(
                                     "👆 Copy the CFBD team name(s) above and report them — "
