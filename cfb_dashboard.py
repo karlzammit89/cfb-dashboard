@@ -4,14 +4,15 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 # ──────────────────────────────────────────────────────────────
-# PAGE CONFIG  (sidebar hidden via CSS — change 4)
+# PAGE CONFIG
 # ──────────────────────────────────────────────────────────────
 st.set_page_config(page_title="CFB Dashboard", page_icon="🏈", layout="wide")
 
-# Hide the default Streamlit sidebar navigation & hamburger menu
 st.markdown("""
 <style>
+[data-testid="stSidebar"] { display: none; }
 [data-testid="stSidebarNav"] { display: none; }
+[data-testid="collapsedControl"] { display: none; }
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 </style>
@@ -48,10 +49,12 @@ PLAY_EMOJI = {
 MISS_EMOJI = "🤦"
 
 # ──────────────────────────────────────────────────────────────
-# API KEY — from Streamlit secrets (change 1)
-# Falls back to empty string if not set so the app still loads
+# API KEY — from Streamlit secrets
 # ──────────────────────────────────────────────────────────────
 cfbd_key = st.secrets.get("CFBD_API_KEY", "")
+
+def cfbd_headers() -> dict:
+    return {"Authorization": f"Bearer {cfbd_key}"}
 
 # ──────────────────────────────────────────────────────────────
 # SESSION STATE
@@ -70,8 +73,8 @@ _defaults = {
     "cached_game_id":     None,
     "filtered_events":    None,
     "filters_applied":    False,
-    "id_search_results":  [],
-    "view":               "schedule",  # "schedule" | "search"
+    "search_results":     [],
+    "search_done":        False,
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -99,9 +102,6 @@ def fmt_full_et(dt) -> str:
 
 def espn_logo(team_id) -> str:
     return f"https://a.espncdn.com/i/teamlogos/ncaa/500/{team_id}.png"
-
-def cfbd_headers() -> dict:
-    return {"Authorization": f"Bearer {cfbd_key}"}
 
 def period_label(p: int) -> str:
     return f"Q{p}" if p <= 4 else f"OT{p - 4}"
@@ -160,22 +160,17 @@ def _norm(name: str) -> str:
         "connecticut":          "uconn",
         "army west point":      "army",
     }
-    name = name.strip()
-    return aliases.get(name, name)
+    return aliases.get(name.strip(), name.strip())
 
 # ──────────────────────────────────────────────────────────────
 # ESPN — SCHEDULE
 # ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=120, show_spinner=False)
-def espn_scoreboard(date_str: str) -> dict:
-    return requests.get(
+def parse_espn_schedule(date_str: str) -> list:
+    raw = requests.get(
         f"{ESPN_BASE}/scoreboard?dates={date_str}&groups=80&limit=200",
         timeout=10,
     ).json()
-
-@st.cache_data(ttl=120, show_spinner=False)
-def parse_espn_schedule(date_str: str) -> list:
-    raw   = espn_scoreboard(date_str)
     games = []
     for event in raw.get("events", []):
         comp        = event.get("competitions", [{}])[0]
@@ -193,7 +188,6 @@ def parse_espn_schedule(date_str: str) -> list:
         away = next((c for c in competitors if c.get("homeAway") == "away"), {})
         home = next((c for c in competitors if c.get("homeAway") == "home"), {})
         at, ht = away.get("team", {}), home.get("team", {})
-
         et_dt  = to_et(event.get("date", ""))
         period = comp.get("status", {}).get("period", 0) or 0
 
@@ -224,10 +218,10 @@ def parse_espn_schedule(date_str: str) -> list:
 # ──────────────────────────────────────────────────────────────
 def cfbd_find_game_id(away_name, home_name, game_date, season_year):
     debug = {
-        "espn_away":   away_name, "espn_home":  home_name,
-        "game_date":   game_date, "season_year": season_year,
-        "norm_away":   _norm(away_name), "norm_home": _norm(home_name),
-        "searches":    [], "candidates_on_date": [],
+        "espn_away": away_name, "espn_home": home_name,
+        "game_date": game_date, "season_year": season_year,
+        "norm_away": _norm(away_name), "norm_home": _norm(home_name),
+        "searches": [], "candidates_on_date": [],
     }
 
     def search(team):
@@ -240,8 +234,8 @@ def cfbd_find_game_id(away_name, home_name, game_date, season_year):
             debug["searches"].append({"term": team, "error": str(e)})
             return []
 
-    away_norm = _norm(away_name)
-    home_norm = _norm(home_name)
+    away_norm    = _norm(away_name)
+    home_norm    = _norm(home_name)
     search_terms = list(dict.fromkeys([home_norm, away_norm, home_name, away_name]))
 
     try:
@@ -253,24 +247,22 @@ def cfbd_find_game_id(away_name, home_name, game_date, season_year):
         return a in b or b in a
 
     for term in search_terms:
-        candidate_games = search(term)
-        debug["searches"].append({"term": term, "results": len(candidate_games)})
-        if candidate_games and "all_cfbd_dates" not in debug:
+        results = search(term)
+        debug["searches"].append({"term": term, "results": len(results)})
+        if results and "all_cfbd_dates" not in debug:
             debug["all_cfbd_dates"] = sorted(
-                set((g.get("startDate") or g.get("start_date") or "")[:10] for g in candidate_games)
+                set((g.get("startDate") or g.get("start_date") or "")[:10] for g in results)
             )
-
-        for g in candidate_games:
+        for g in results:
             g_date = (g.get("startDate") or g.get("start_date") or "")[:10]
             date_ok = False
             if tgt_dt:
                 try:
-                    g_dt = datetime.strptime(g_date, "%Y-%m-%d").date()
-                    date_ok = abs((g_dt - tgt_dt).days) <= 1
+                    date_ok = abs((datetime.strptime(g_date, "%Y-%m-%d").date() - tgt_dt).days) <= 1
                 except Exception:
-                    date_ok = (g_date == game_date)
+                    date_ok = g_date == game_date
             else:
-                date_ok = (g_date == game_date)
+                date_ok = g_date == game_date
             if not date_ok:
                 continue
 
@@ -282,19 +274,17 @@ def cfbd_find_game_id(away_name, home_name, game_date, season_year):
 
             debug["candidates_on_date"].append({
                 "cfbd_away": g_away_raw, "cfbd_home": g_home_raw,
-                "cfbd_date": g_date,
-                "norm_away": g_away_norm, "norm_home": g_home_norm,
-                "id": g.get("id"),
+                "cfbd_date": g_date, "norm_away": g_away_norm,
+                "norm_home": g_home_norm, "id": g.get("id"),
             })
 
             if away_norm == g_away_norm and home_norm == g_home_norm:
                 return g.get("id"), g_week, debug
             if away_norm == g_home_norm and home_norm == g_away_norm:
                 return g.get("id"), g_week, debug
-            away_hit = sub_match(away_norm, g_away_norm) or sub_match(away_norm, g_home_norm)
-            home_hit = sub_match(home_norm, g_home_norm) or sub_match(home_norm, g_away_norm)
-            if away_hit and home_hit:
-                return g.get("id"), g_week, debug
+            if sub_match(away_norm, g_away_norm) or sub_match(away_norm, g_home_norm):
+                if sub_match(home_norm, g_home_norm) or sub_match(home_norm, g_away_norm):
+                    return g.get("id"), g_week, debug
 
     return None, None, debug
 
@@ -322,26 +312,23 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
 
     for p in raw:
         period_num = p.get("period", 0)
-        desc       = p.get("playText") or p.get("play_text") or ""
-        play_type  = p.get("playType") or p.get("play_type") or ""
-        clock_val  = p.get("clock") or p.get("clockTime") or ""
+        desc       = p.get("playText")    or p.get("play_text")   or ""
+        play_type  = p.get("playType")    or p.get("play_type")   or ""
+        clock_val  = p.get("clock")       or p.get("clockTime")   or ""
         away_sc    = int(p.get("awayScore") or p.get("away_score") or 0)
         home_sc    = int(p.get("homeScore") or p.get("home_score") or 0)
         total      = away_sc + home_sc
         is_score   = total > prev_total
         prev_total = total
-
-        action_dt = to_et(p.get("wallclock") or p.get("wallClock") or "")
-
-        down      = p.get("down") or 0
-        distance  = p.get("distance") or 0
-        yard_line = p.get("yardLine") or p.get("yard_line") or 0
-        offense   = p.get("offense") or p.get("offenseTeam") or ""
-
-        down_str = ""
+        action_dt  = to_et(p.get("wallclock") or p.get("wallClock") or "")
+        down       = p.get("down")     or 0
+        distance   = p.get("distance") or 0
+        yard_line  = p.get("yardLine") or p.get("yard_line") or 0
+        offense    = p.get("offense")  or p.get("offenseTeam") or ""
+        down_str   = ""
         if down > 0:
-            ords = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
-            dist = "Goal" if distance == 0 else str(distance)
+            ords     = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+            dist     = "Goal" if distance == 0 else str(distance)
             down_str = f"{ords.get(down,'?')} & {dist} at {yard_line}"
 
         events.append({
@@ -368,101 +355,6 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
     return events
 
 # ══════════════════════════════════════════════════════════════
-# SIDEBAR — Search only (change 2: moved from main, change 3: removed marketing text)
-# ══════════════════════════════════════════════════════════════
-with st.sidebar:
-    st.header("🔍 Search Games")
-
-    search_team = st.text_input("Team name", placeholder="e.g. Miami", key="id_search_team")
-    search_year = st.number_input(
-        "Season year", min_value=2000, max_value=2030,
-        value=datetime.today().year if datetime.today().month > 7 else datetime.today().year - 1,
-        step=1, key="id_search_year",
-    )
-    search_type = st.selectbox("Season type", ["both", "regular", "postseason"], key="id_search_type")
-
-    if st.button("🔎 Find Games", key="id_search_btn"):
-        if not cfbd_key:
-            st.error("No CFBD API key found. Add CFBD_API_KEY to your Streamlit secrets.")
-        elif not search_team.strip():
-            st.warning("Enter a team name.")
-        else:
-            try:
-                r = requests.get(
-                    f"{CFBD_BASE}/games",
-                    headers=cfbd_headers(),
-                    params={"year": int(search_year), "team": search_team.strip(), "seasonType": search_type},
-                    timeout=10,
-                )
-                r.raise_for_status()
-                found = r.json()
-                st.session_state["id_search_results"] = found if isinstance(found, list) else []
-                if not found:
-                    st.warning("No games found — try a different team name or year.")
-            except Exception as e:
-                st.error(f"Search failed: {e}")
-
-    results = st.session_state.get("id_search_results", [])
-    if results:
-        st.markdown(f"**{len(results)} game(s) — pick one:**")
-        for g in sorted(results, key=lambda x: x.get("startDate", x.get("start_date", "")), reverse=True):
-            g_date     = (g.get("startDate") or g.get("start_date") or "")[:10]
-            g_away     = g.get("awayTeam")  or g.get("away_team")  or "?"
-            g_home     = g.get("homeTeam")  or g.get("home_team")  or "?"
-            g_away_pts = g.get("awayPoints") or g.get("away_points") or ""
-            g_home_pts = g.get("homePoints") or g.get("home_points") or ""
-            g_id       = g.get("id")
-            g_week_num = g.get("week") or "?"
-            score_str  = f" ({g_away_pts}–{g_home_pts})" if g_away_pts != "" else ""
-            g_label    = f"{g_away} @ {g_home}{score_str} · {g_date} · Wk {g_week_num}"
-            if st.button(g_label, key=f"manual_pick_{g_id}"):
-                for k in ("cached_events", "cached_game_id", "filtered_events"):
-                    st.session_state[k] = None
-                g_year = int(g.get("season") or g.get("year") or search_year)
-                g_week = int(g.get("week") or 1)
-                st.session_state.filters_applied    = False
-                st.session_state.selected_cfbd_id   = g_id
-                st.session_state.selected_away_name = g_away
-                st.session_state.selected_home_name = g_home
-                st.session_state.selected_away_abbr = g_away[:4].upper()
-                st.session_state.selected_home_abbr = g_home[:4].upper()
-                st.session_state.selected_away_eid  = ""
-                st.session_state.selected_home_eid  = ""
-                st.session_state.selected_year      = g_year
-                st.session_state.selected_week      = g_week
-                st.session_state["id_search_results"] = []
-                st.rerun()
-
-    st.markdown("---")
-    with st.expander("🛠 Raw API Inspector", expanded=False):
-        st.caption("Paste a game ID to inspect the raw /plays response.")
-        debug_game_id = st.text_input("Game ID", placeholder="e.g. 401628432", key="debug_game_id")
-        if st.button("Fetch", key="debug_fetch") and debug_game_id.strip():
-            if not cfbd_key:
-                st.error("No API key in secrets.")
-            else:
-                try:
-                    debug_year = st.session_state.get("selected_year") or int(search_year)
-                    debug_week = st.session_state.get("selected_week") or 1
-                    r = requests.get(
-                        f"{CFBD_BASE}/plays",
-                        headers=cfbd_headers(),
-                        params={"gameId": debug_game_id.strip(), "year": debug_year, "week": debug_week},
-                        timeout=15,
-                    )
-                    st.markdown(f"**Status:** {r.status_code}")
-                    data = r.json()
-                    if isinstance(data, list):
-                        st.markdown(f"**{len(data)} plays returned**")
-                        if data:
-                            st.code(str(list(data[0].keys())))
-                            st.json(data[0])
-                    else:
-                        st.json(data)
-                except Exception as e:
-                    st.error(f"Failed: {e}")
-
-# ══════════════════════════════════════════════════════════════
 # GAME FEED VIEW
 # ══════════════════════════════════════════════════════════════
 if st.session_state.selected_cfbd_id:
@@ -475,7 +367,7 @@ if st.session_state.selected_cfbd_id:
     g_year    = st.session_state.get("selected_year") or datetime.today().year
     g_week    = st.session_state.get("selected_week") or 1
 
-    if st.button("⬅ Back to Schedule"):
+    if st.button("⬅ Back"):
         for k in ("cached_events", "cached_game_id", "filtered_events"):
             st.session_state[k] = None
         st.session_state.filters_applied  = False
@@ -486,7 +378,7 @@ if st.session_state.selected_cfbd_id:
         events = get_events(cfbd_id, g_year, g_week)
 
     if not events:
-        st.warning("No plays returned. The game may not be indexed yet, or the year/week may be wrong. Try the Raw API Inspector in the sidebar.")
+        st.warning("No plays returned. The game may not be indexed yet, or the week number may be wrong. Try searching again with the correct week.")
         st.stop()
 
     live_away = events[-1]["away_score"]
@@ -522,9 +414,9 @@ if st.session_state.selected_cfbd_id:
 
     st.divider()
 
-    all_dts    = [e["action_dt"] for e in events if e["action_dt"]]
-    gs_default = min(all_dts) if all_dts else None
-    ge_default = max(all_dts) if all_dts else None
+    all_dts        = [e["action_dt"] for e in events if e["action_dt"]]
+    gs_default     = min(all_dts) if all_dts else None
+    ge_default     = max(all_dts) if all_dts else None
     all_periods    = sorted({e["period_label"] for e in events},
         key=lambda x: (x.startswith("OT"), int(x[1:]) if x.startswith("Q") else int(x[2:]) + 100))
     all_play_types = sorted({e["play_type"] for e in events if e["play_type"]})
@@ -541,7 +433,6 @@ if st.session_state.selected_cfbd_id:
 
     if USE_Q:
         sel_quarters = st.multiselect("Quarters / OT", options=all_periods)
-
     if USE_T:
         if not all_dts:
             st.warning("No wall-clock timestamps available.")
@@ -549,27 +440,25 @@ if st.session_state.selected_cfbd_id:
             tc1, tc2 = st.columns(2)
             with tc1:
                 sd  = st.date_input("Start date", gs_default.date(), key="sd")
-                st_ = st.time_input("Start time", gs_default.time(), step=60, key="st")
+                st_ = st.time_input("Start time", gs_default.time(), step=60, key="st_")
             with tc2:
                 ed  = st.date_input("End date",   ge_default.date(), key="ed")
-                et_ = st.time_input("End time",   ge_default.time(), step=60, key="et")
+                et_ = st.time_input("End time",   ge_default.time(), step=60, key="et_")
             START_DT = datetime.combine(sd, st_).replace(tzinfo=ET)
             END_DT   = datetime.combine(ed, et_).replace(tzinfo=ET)
-
     if USE_PT:
         sel_types = st.multiselect("Play types", options=all_play_types)
-
     if USE_TM:
         sel_offenses = st.multiselect("Offense", options=all_offenses)
 
     if st.button("🚀 Apply Filters"):
         def passes(e):
-            if USE_Q and sel_quarters and e["period_label"] not in sel_quarters: return False
-            if USE_T and START_DT and END_DT:
+            if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
+            if USE_T  and START_DT and END_DT:
                 if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
-            if USE_SC and not e["is_scoring"]: return False
-            if USE_PT and sel_types and e["play_type"] not in sel_types: return False
-            if USE_TM and sel_offenses and e["offense"] not in sel_offenses: return False
+            if USE_SC and not e["is_scoring"]:                                        return False
+            if USE_PT and sel_types    and e["play_type"] not in sel_types:          return False
+            if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
             return True
         st.session_state.filtered_events = [e for e in events if passes(e)]
         st.session_state.filters_applied = True
@@ -584,10 +473,10 @@ if st.session_state.selected_cfbd_id:
             st.stop()
         if USE_Q:  st.info(f"🏈 Quarter: {', '.join(sel_quarters or ['none'])} — {n}/{t}")
         if USE_T and START_DT:
-            st.info(f"🕐 Time: {START_DT.strftime('%H:%M')} → {END_DT.strftime('%H:%M')} ET — {n}/{t}")
+            st.info(f"🕐 {START_DT.strftime('%H:%M')} → {END_DT.strftime('%H:%M')} ET — {n}/{t}")
         if USE_SC: st.info(f"🔥 Scoring only — {n}/{t}")
-        if USE_PT: st.info(f"📋 Play type: {', '.join(sel_types or ['none'])} — {n}/{t}")
-        if USE_TM: st.info(f"🏟️ Possession: {', '.join(sel_offenses or ['none'])} — {n}/{t}")
+        if USE_PT: st.info(f"📋 {', '.join(sel_types or ['none'])} — {n}/{t}")
+        if USE_TM: st.info(f"🏟️ {', '.join(sel_offenses or ['none'])} — {n}/{t}")
 
     for e in filtered:
         st.subheader(f"{e['emoji']} {e['period_label']} | ⏱️ {e['clock_str']}")
@@ -595,34 +484,36 @@ if st.session_state.selected_cfbd_id:
         if e["play_type"]: meta_parts.append(f"**{e['play_type']}**")
         if e["offense"]:   meta_parts.append(f"{e['offense']} ball")
         if meta_parts:     st.caption("  ·  ".join(meta_parts))
-        if e["is_scoring"]:
-            st.markdown(f"📊 **Score:** {e['score_str']} &nbsp; 🔥 *Scoring Play!*")
-        else:
-            st.markdown(f"📊 **Score:** {e['score_str']}")
-        if e["down_str"]:
-            st.markdown(f"📏 **Down & Distance:** {e['down_str']}")
-        if e["yards_gained"] is not None:
-            st.markdown(f"📐 **Yards Gained:** {e['yards_gained']}")
+        st.markdown(f"📊 **Score:** {e['score_str']}" + (" &nbsp; 🔥 *Scoring Play!*" if e["is_scoring"] else ""))
+        if e["down_str"]:        st.markdown(f"📏 **Down & Distance:** {e['down_str']}")
+        if e["yards_gained"] is not None: st.markdown(f"📐 **Yards Gained:** {e['yards_gained']}")
         st.markdown(f"📋 **Play:** {e['desc']}")
         st.markdown(f"🕐 **Wall Clock (ET):** `{e['action_dt_str']}`")
         st.divider()
 
 # ══════════════════════════════════════════════════════════════
-# SCHEDULE VIEW
+# HOME — SEARCH + SCHEDULE
 # ══════════════════════════════════════════════════════════════
 else:
-    date     = st.date_input("Select date", datetime.today(), format="YYYY-MM-DD")
-    date_str = date.strftime("%Y%m%d")
-    st.markdown(f"## CFB Schedule — {date.strftime('%Y-%m-%d')}")
 
-    with st.spinner("Loading schedule…"):
-        games = parse_espn_schedule(date_str)
+    # ── Tab bar ───────────────────────────────────────────────
+    tab_schedule, tab_search = st.tabs(["📅 Schedule", "🔍 Search Games"])
 
-    if not games:
-        st.info("No games found for this date.")
-        st.stop()
+    # ══════════════════════════
+    # TAB 1 — SCHEDULE (ESPN)
+    # ══════════════════════════
+    with tab_schedule:
+        date     = st.date_input("Select date", datetime.today(), format="YYYY-MM-DD", label_visibility="collapsed")
+        date_str = date.strftime("%Y%m%d")
+        st.markdown(f"### {date.strftime('%A, %B %-d %Y')}")
 
-    st.markdown("""
+        with st.spinner("Loading schedule…"):
+            games = parse_espn_schedule(date_str)
+
+        if not games:
+            st.info("No games found for this date.")
+        else:
+            st.markdown("""
 <style>
 .sched-team-row { display:flex; align-items:center; gap:10px; margin-bottom:4px; }
 .sched-team-row img { width:34px; height:34px; object-fit:contain; }
@@ -637,14 +528,14 @@ else:
 </style>
 """, unsafe_allow_html=True)
 
-    cols = st.columns(2)
-    for i, g in enumerate(games):
-        a_sc  = f'<span class="sched-score">{g["away_score"]}</span>' if g["is_live_or_final"] else ""
-        h_sc  = f'<span class="sched-score">{g["home_score"]}</span>' if g["is_live_or_final"] else ""
-        ot    = ' <span class="sched-extra">OT</span>' if g["is_ot"] else ""
-        meta  = f'{g["time_str"]} &middot; {g["status"]}{ot}'
-        venue = f'<div class="sched-venue">📍 {g["venue"]}</div>' if g["venue"] else ""
-        html  = f"""
+            cols = st.columns(2)
+            for i, g in enumerate(games):
+                a_sc  = f'<span class="sched-score">{g["away_score"]}</span>' if g["is_live_or_final"] else ""
+                h_sc  = f'<span class="sched-score">{g["home_score"]}</span>' if g["is_live_or_final"] else ""
+                ot    = ' <span class="sched-extra">OT</span>' if g["is_ot"] else ""
+                meta  = f'{g["time_str"]} &middot; {g["status"]}{ot}'
+                venue = f'<div class="sched-venue">📍 {g["venue"]}</div>' if g["venue"] else ""
+                html  = f"""
 <div class="sched-team-row">
   <img src="{g['away_logo']}"/><span class="sched-team-name">{g['away_abbr']}</span>{a_sc}
 </div>
@@ -653,45 +544,124 @@ else:
 </div>
 <div class="sched-meta">{meta}</div>{venue}"""
 
-        with cols[i % 2]:
-            with st.container(border=True):
-                st.markdown(html, unsafe_allow_html=True)
-                if st.button(f"▶  Open  {g['away_abbr']} @ {g['home_abbr']}",
-                             key=f"go_{g['espn_id']}", use_container_width=True):
-                    with st.spinner("Matching in CFBD…"):
-                        cfbd_id, cfbd_week, debug = cfbd_find_game_id(
-                            g["away_name"], g["home_name"],
-                            g["game_date"], g["season_year"],
-                        )
-                    if not cfbd_id:
-                        st.error(f"Could not match **{g['away_abbr']} @ {g['home_abbr']}** — use Search Games in the sidebar instead.")
-                        with st.expander("🔍 Debug", expanded=True):
-                            st.markdown(f"**ESPN:** `{debug['espn_away']}` @ `{debug['espn_home']}`")
-                            st.markdown(f"**Normalised:** `{debug['norm_away']}` @ `{debug['norm_home']}`")
-                            st.markdown(f"**Date:** `{debug['game_date']}` | **Season:** `{debug['season_year']}`")
-                            for s in debug["searches"]:
-                                if "error" in s:
-                                    st.markdown(f"- `{s.get('term','?')}` → ❌ {s['error']}")
-                                else:
-                                    st.markdown(f"- `{s.get('term','?')}` → {s['results']} result(s)")
-                            if debug["candidates_on_date"]:
-                                for c in debug["candidates_on_date"]:
-                                    st.markdown(f"- `{c['cfbd_away']}` @ `{c['cfbd_home']}` · {c.get('cfbd_date','?')}")
+                with cols[i % 2]:
+                    with st.container(border=True):
+                        st.markdown(html, unsafe_allow_html=True)
+                        if st.button(f"▶  Open  {g['away_abbr']} @ {g['home_abbr']}",
+                                     key=f"go_{g['espn_id']}", use_container_width=True):
+                            with st.spinner("Matching in CFBD…"):
+                                cfbd_id, cfbd_week, debug = cfbd_find_game_id(
+                                    g["away_name"], g["home_name"],
+                                    g["game_date"], g["season_year"],
+                                )
+                            if not cfbd_id:
+                                st.error(f"Could not auto-match **{g['away_abbr']} @ {g['home_abbr']}** — use the Search Games tab instead.")
+                                with st.expander("🔍 Debug", expanded=False):
+                                    st.markdown(f"**ESPN:** `{debug['espn_away']}` @ `{debug['espn_home']}`")
+                                    st.markdown(f"**Normalised:** `{debug['norm_away']}` @ `{debug['norm_home']}`")
+                                    st.markdown(f"**Date:** `{debug['game_date']}` | **Season:** `{debug['season_year']}`")
+                                    for s in debug["searches"]:
+                                        icon = "❌" if "error" in s else "→"
+                                        st.markdown(f"- `{s.get('term','?')}` {icon} {s.get('error', str(s.get('results','')) + ' result(s)')}")
+                                    if debug.get("all_cfbd_dates"):
+                                        st.markdown("**Dates CFBD has for this team:**")
+                                        st.code(", ".join(debug["all_cfbd_dates"]))
                             else:
-                                st.warning("No games found near this date in CFBD — may not be indexed yet.")
-                                if debug.get("all_cfbd_dates"):
-                                    st.code(", ".join(debug["all_cfbd_dates"]))
-                    else:
-                        for k in ("cached_events", "cached_game_id", "filtered_events"):
-                            st.session_state[k] = None
-                        st.session_state.filters_applied      = False
-                        st.session_state.selected_cfbd_id     = cfbd_id
-                        st.session_state.selected_away_name   = g["away_name"]
-                        st.session_state.selected_home_name   = g["home_name"]
-                        st.session_state.selected_away_abbr   = g["away_abbr"]
-                        st.session_state.selected_home_abbr   = g["home_abbr"]
-                        st.session_state.selected_away_eid    = g["away_eid"]
-                        st.session_state.selected_home_eid    = g["home_eid"]
-                        st.session_state.selected_year        = g["season_year"]
-                        st.session_state.selected_week        = cfbd_week
-                        st.rerun()
+                                for k in ("cached_events", "cached_game_id", "filtered_events"):
+                                    st.session_state[k] = None
+                                st.session_state.filters_applied      = False
+                                st.session_state.selected_cfbd_id     = cfbd_id
+                                st.session_state.selected_away_name   = g["away_name"]
+                                st.session_state.selected_home_name   = g["home_name"]
+                                st.session_state.selected_away_abbr   = g["away_abbr"]
+                                st.session_state.selected_home_abbr   = g["home_abbr"]
+                                st.session_state.selected_away_eid    = g["away_eid"]
+                                st.session_state.selected_home_eid    = g["home_eid"]
+                                st.session_state.selected_year        = g["season_year"]
+                                st.session_state.selected_week        = cfbd_week
+                                st.rerun()
+
+    # ══════════════════════════
+    # TAB 2 — SEARCH GAMES (CFBD)
+    # ══════════════════════════
+    with tab_search:
+        st.markdown("Search by team name to find a game, then click to load its play-by-play.")
+
+        col_a, col_b, col_c = st.columns([3, 1, 1])
+        with col_a:
+            search_team = st.text_input("Team name", placeholder="e.g. Alabama, Miami, Ohio State", label_visibility="collapsed")
+        with col_b:
+            search_year = st.number_input(
+                "Year", min_value=2000, max_value=2030,
+                value=datetime.today().year if datetime.today().month > 7 else datetime.today().year - 1,
+                step=1, label_visibility="collapsed",
+            )
+        with col_c:
+            search_type = st.selectbox("Type", ["both", "regular", "postseason"], label_visibility="collapsed")
+
+        if st.button("🔎 Find Games", use_container_width=True):
+            if not cfbd_key:
+                st.error("No CFBD API key found. Add CFBD_API_KEY to your Streamlit secrets.")
+            elif not search_team.strip():
+                st.warning("Enter a team name first.")
+            else:
+                with st.spinner(f"Searching CFBD for {search_team}…"):
+                    try:
+                        r = requests.get(
+                            f"{CFBD_BASE}/games", headers=cfbd_headers(),
+                            params={"year": int(search_year), "team": search_team.strip(), "seasonType": search_type},
+                            timeout=10,
+                        )
+                        r.raise_for_status()
+                        found = r.json()
+                        st.session_state.search_results = found if isinstance(found, list) else []
+                        st.session_state.search_done    = True
+                        if not st.session_state.search_results:
+                            st.warning("No games found — try a different name or year.")
+                    except Exception as e:
+                        st.error(f"Search failed: {e}")
+
+        if st.session_state.search_done and st.session_state.search_results:
+            results = sorted(
+                st.session_state.search_results,
+                key=lambda x: x.get("startDate", x.get("start_date", "")),
+                reverse=True,
+            )
+            st.markdown(f"**{len(results)} game(s) found:**")
+            st.markdown("""
+<style>
+.game-row { display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px; border-radius:8px; margin-bottom:6px;
+    border:1px solid rgba(255,255,255,0.1); gap:12px; flex-wrap:wrap; }
+.game-row-teams { font-size:16px; font-weight:700; }
+.game-row-meta  { font-size:12px; color:#999; }
+</style>
+""", unsafe_allow_html=True)
+
+            for g in results:
+                g_date     = (g.get("startDate") or g.get("start_date") or "")[:10]
+                g_away     = g.get("awayTeam")   or g.get("away_team")  or "?"
+                g_home     = g.get("homeTeam")   or g.get("home_team")  or "?"
+                g_away_pts = g.get("awayPoints") or g.get("away_points") or ""
+                g_home_pts = g.get("homePoints") or g.get("home_points") or ""
+                g_id       = g.get("id")
+                g_week     = g.get("week") or "?"
+                score_str  = f"  {g_away_pts}–{g_home_pts}" if g_away_pts != "" else ""
+                btn_label  = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  Week {g_week}"
+
+                if st.button(btn_label, key=f"pick_{g_id}", use_container_width=True):
+                    for k in ("cached_events", "cached_game_id", "filtered_events"):
+                        st.session_state[k] = None
+                    st.session_state.filters_applied    = False
+                    st.session_state.selected_cfbd_id   = g_id
+                    st.session_state.selected_away_name = g_away
+                    st.session_state.selected_home_name = g_home
+                    st.session_state.selected_away_abbr = g_away[:6].upper()
+                    st.session_state.selected_home_abbr = g_home[:6].upper()
+                    st.session_state.selected_away_eid  = ""
+                    st.session_state.selected_home_eid  = ""
+                    st.session_state.selected_year      = int(g.get("season") or g.get("year") or search_year)
+                    st.session_state.selected_week      = int(g.get("week") or 1)
+                    st.session_state.search_results     = []
+                    st.session_state.search_done        = False
+                    st.rerun()
