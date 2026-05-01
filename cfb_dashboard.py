@@ -81,6 +81,39 @@ with st.sidebar:
                                   step=1, key="id_search_year")
     search_type = st.selectbox("Season type", ["both", "regular", "postseason"], key="id_search_type")
 
+    # ── Raw API inspector ──────────────────────────────────────
+    with st.expander("🛠 Raw API Inspector (debug)", expanded=False):
+        st.markdown("Paste any CFBD game ID to see the raw `/plays` response — helps diagnose field name issues.")
+        debug_game_id = st.text_input("Game ID to inspect", placeholder="e.g. 401628432", key="debug_game_id")
+        if st.button("Fetch raw plays", key="debug_fetch") and debug_game_id.strip() and cfbd_key:
+            try:
+                r = requests.get(
+                    f"{CFBD_BASE}/plays",
+                    headers={"Authorization": f"Bearer {cfbd_key}"},
+                    params={"gameId": debug_game_id.strip()},
+                    timeout=15,
+                )
+                st.markdown(f"**Status:** {r.status_code}")
+                try:
+                    data = r.json()
+                    if isinstance(data, list):
+                        st.markdown(f"**Returned:** list of {len(data)} item(s)")
+                        if data:
+                            st.markdown("**Keys in first item:**")
+                            st.code(str(list(data[0].keys())))
+                            st.markdown("**First item (raw):**")
+                            st.json(data[0])
+                    elif isinstance(data, dict):
+                        st.markdown("**Returned a dict (not a list) — possible error or wrapper:**")
+                        st.json(data)
+                    else:
+                        st.write(data)
+                except Exception as je:
+                    st.markdown("**Raw text response:**")
+                    st.code(r.text[:2000])
+            except Exception as e:
+                st.error(f"Request failed: {e}")
+
     if st.button("🔎 Find Games", key="id_search_btn") and search_team.strip() and cfbd_key:
         try:
             r = requests.get(
