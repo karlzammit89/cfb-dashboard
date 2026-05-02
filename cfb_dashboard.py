@@ -261,6 +261,11 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
         return st.session_state.cached_events
 
     raw        = cfbd_fetch_plays(cfbd_id, year, week)
+
+    # ── Temporary raw field debug (shown in game feed) ──
+    if raw:
+        st.session_state["_raw_play_sample"] = raw[0]
+
     events     = []
     prev_away  = 0
     prev_home  = 0
@@ -390,6 +395,14 @@ if st.session_state.selected_cfbd_id:
         st.info(f"🕐 Wall-clock timestamps on {has_wc}/{total} plays ({pct}%)")
     else:
         st.warning(f"🕐 Wall-clock sparse: {has_wc}/{total} plays ({pct}%) — time filter may return few results")
+
+    # Raw field inspector — helps diagnose wrong field names
+    with st.expander("🛠 Raw play field debug (first play)", expanded=False):
+        sample = st.session_state.get("_raw_play_sample")
+        if sample:
+            st.json(sample)
+        else:
+            st.write("No sample available.")
 
     st.divider()
 
