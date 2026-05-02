@@ -313,6 +313,22 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
             "emoji":         _emoji(play_type, desc, is_score),
         })
 
+    # Sort by wallclock ascending so plays appear in game order.
+    # Falls back to period + clock for plays missing a wallclock timestamp.
+    def _sort_key(e):
+        if e["action_dt"]:
+            return (0, e["action_dt"].timestamp(), 0, 0)
+        # No wallclock — sort by period, then countdown clock descending
+        # (clock counts down so 15:00 is earlier than 14:55)
+        try:
+            parts = e["clock_str"].split(":")
+            secs_remaining = int(parts[0]) * 60 + int(parts[1])
+        except Exception:
+            secs_remaining = 0
+        return (1, 0, e["period"], -secs_remaining)
+
+    events.sort(key=_sort_key)
+
     st.session_state.cached_events  = events
     st.session_state.cached_game_id = cfbd_id
     return events
