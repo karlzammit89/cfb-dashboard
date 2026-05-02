@@ -494,7 +494,6 @@ if st.session_state.selected_cfbd_id:
         if USE_T and START_DT:
             st.info(f"🕐 {START_DT.strftime('%H:%M')} → {END_DT.strftime('%H:%M')} ET — {n}/{t}")
         if USE_SC: st.info(f"🔥 Scoring only — {n}/{t}")
-        if USE_PT: st.info(f"📋 {', '.join(sel_types or ['none'])} — {n}/{t}")
         if USE_TM: st.info(f"🏟️ {', '.join(sel_offenses or ['none'])} — {n}/{t}")
 
     for e in filtered:
