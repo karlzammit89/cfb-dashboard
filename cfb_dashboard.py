@@ -262,10 +262,6 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
 
     raw        = cfbd_fetch_plays(cfbd_id, year, week)
 
-    # ── Temporary raw field debug (shown in game feed) ──
-    if raw:
-        st.session_state["_raw_play_sample"] = raw[0]
-
     events     = []
     prev_away  = 0
     prev_home  = 0
@@ -283,15 +279,22 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
             clock_val = _clock_raw
         else:
             clock_val = ""
-        away_sc    = int(p.get("awayScore") or p.get("away_score") or 0)
-        home_sc    = int(p.get("homeScore") or p.get("home_score") or 0)
+        offense_sc = int(p.get("offenseScore") or 0)
+        defense_sc = int(p.get("defenseScore") or 0)
+        home_team  = (p.get("home") or "").lower()
+        offense_tm = (p.get("offense") or "").lower()
+        # Map offense/defense scores to home/away
+        if offense_tm == home_team:
+            home_sc, away_sc = offense_sc, defense_sc
+        else:
+            away_sc, home_sc = offense_sc, defense_sc
         is_score   = (away_sc != prev_away or home_sc != prev_home) and (away_sc + home_sc > 0)
         prev_away  = away_sc
         prev_home  = home_sc
         action_dt  = to_et(p.get("wallclock") or p.get("wallClock") or "")
         down       = p.get("down")     or 0
         distance   = p.get("distance") or 0
-        yard_line  = p.get("yardLine") or p.get("yard_line") or 0
+        yard_line  = p.get("yardline") or p.get("yardLine") or p.get("yard_line") or 0
         offense    = p.get("offense")  or p.get("offenseTeam") or ""
         down_str   = ""
         if down > 0:
@@ -395,14 +398,6 @@ if st.session_state.selected_cfbd_id:
         st.info(f"🕐 Wall-clock timestamps on {has_wc}/{total} plays ({pct}%)")
     else:
         st.warning(f"🕐 Wall-clock sparse: {has_wc}/{total} plays ({pct}%) — time filter may return few results")
-
-    # Raw field inspector — helps diagnose wrong field names
-    with st.expander("🛠 Raw play field debug (first play)", expanded=False):
-        sample = st.session_state.get("_raw_play_sample")
-        if sample:
-            st.json(sample)
-        else:
-            st.write("No sample available.")
 
     st.divider()
 
