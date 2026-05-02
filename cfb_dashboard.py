@@ -300,7 +300,11 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
         if down > 0:
             ords     = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
             dist     = "Goal" if distance == 0 else str(distance)
-            down_str = f"{ords.get(down,'?')} & {dist} at {yard_line}"
+            if yard_line <= 50:
+                yard_str = f"own {yard_line}"
+            else:
+                yard_str = f"opp {100 - yard_line}"
+            down_str = f"{ords.get(down,'?')} & {dist} at {yard_str}"
 
         events.append({
             "period":        period_num,
@@ -524,29 +528,56 @@ else:
         st.markdown(f"**{len(results)} game(s) found:**")
 
         for g in results:
-            g_date     = (g.get("startDate") or g.get("start_date") or "")[:10]
-            g_away     = g.get("awayTeam")   or g.get("away_team")  or "?"
-            g_home     = g.get("homeTeam")   or g.get("home_team")  or "?"
-            g_away_pts = g.get("awayPoints") or g.get("away_points") or ""
-            g_home_pts = g.get("homePoints") or g.get("home_points") or ""
-            g_id       = g.get("id")
-            g_week     = g.get("week") or "?"
-            score_str  = f"  {g_away_pts}–{g_home_pts}" if g_away_pts != "" else ""
-            btn_label  = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  Week {g_week}"
+            _raw_dt    = g.get("startDate") or g.get("start_date") or ""
+            try:
+                from zoneinfo import ZoneInfo as _ZI
+                _et_dt  = datetime.fromisoformat(_raw_dt.replace("Z", "+00:00")).astimezone(_ZI("America/New_York"))
+                g_date  = _et_dt.strftime("%Y-%m-%d")
+            except Exception:
+                g_date  = _raw_dt[:10]
+            g_away      = g.get("awayTeam")   or g.get("away_team")  or "?"
+            g_home      = g.get("homeTeam")   or g.get("home_team")  or "?"
+            g_away_pts  = g.get("awayPoints") or g.get("away_points") or ""
+            g_home_pts  = g.get("homePoints") or g.get("home_points") or ""
+            g_away_id   = g.get("awayId")     or g.get("away_id")    or ""
+            g_home_id   = g.get("homeId")     or g.get("home_id")    or ""
+            g_id        = g.get("id")
+            g_week      = g.get("week") or "?"
+            g_stype     = (g.get("seasonType") or g.get("season_type") or "regular").lower()
+            week_label  = "Postseason" if g_stype in ("postseason", "post") else f"Week {g_week}"
+            score_str   = f"  {g_away_pts}–{g_home_pts}" if g_away_pts != "" else ""
+            btn_label   = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  {week_label}"
 
-            if st.button(btn_label, key=f"pick_{g_id}", use_container_width=True):
-                for k in ("cached_events", "cached_game_id", "filtered_events"):
-                    st.session_state[k] = None
-                st.session_state.filters_applied    = False
-                st.session_state.selected_cfbd_id   = g_id
-                st.session_state.selected_away_name = g_away
-                st.session_state.selected_home_name = g_home
-                st.session_state.selected_away_abbr = g_away[:6].upper()
-                st.session_state.selected_home_abbr = g_home[:6].upper()
-                st.session_state.selected_away_eid  = ""
-                st.session_state.selected_home_eid  = ""
-                st.session_state.selected_year      = int(g.get("season") or g.get("year") or search_year)
-                st.session_state.selected_week      = int(g.get("week") or 1)
-                st.session_state.search_results     = []
-                st.session_state.search_done        = False
-                st.rerun()
+            with st.container(border=True):
+                la, lb, lc, ld, le = st.columns([1, 4, 1, 4, 1])
+                with la:
+                    if g_away_id:
+                        st.image(espn_logo(g_away_id), width=32)
+                with lb:
+                    st.markdown(f"**{g_away}**")
+                with lc:
+                    st.markdown("<div style='text-align:center;padding-top:4px'>@</div>", unsafe_allow_html=True)
+                with ld:
+                    st.markdown(f"**{g_home}**")
+                with le:
+                    if g_home_id:
+                        st.image(espn_logo(g_home_id), width=32)
+                score_disp = score_str.strip()
+                meta = f"{score_disp}  ·  " if score_disp else ""
+                st.caption(f"{meta}{g_date}  ·  {week_label}")
+                if st.button("▶ Open", key=f"pick_{g_id}", use_container_width=True):
+                    for k in ("cached_events", "cached_game_id", "filtered_events"):
+                        st.session_state[k] = None
+                    st.session_state.filters_applied    = False
+                    st.session_state.selected_cfbd_id   = g_id
+                    st.session_state.selected_away_name = g_away
+                    st.session_state.selected_home_name = g_home
+                    st.session_state.selected_away_abbr = g_away[:6].upper()
+                    st.session_state.selected_home_abbr = g_home[:6].upper()
+                    st.session_state.selected_away_eid  = g_away_id
+                    st.session_state.selected_home_eid  = g_home_id
+                    st.session_state.selected_year      = int(g.get("season") or g.get("year") or search_year)
+                    st.session_state.selected_week      = int(g.get("week") or 1)
+                    st.session_state.search_results     = []
+                    st.session_state.search_done        = False
+                    st.rerun()
