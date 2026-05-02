@@ -288,9 +288,14 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
             home_sc, away_sc = offense_sc, defense_sc
         else:
             away_sc, home_sc = offense_sc, defense_sc
-        is_score   = (away_sc != prev_away or home_sc != prev_home) and (away_sc + home_sc > 0)
-        prev_away  = away_sc
-        prev_home  = home_sc
+        # Use CFBD's own scoring flag AND require the total score to have
+        # actually increased — this prevents false positives when possession
+        # flips cause the home/away mapping to temporarily look different
+        cfbd_scoring  = bool(p.get("scoring", False))
+        score_went_up = (away_sc + home_sc) > (prev_away + prev_home)
+        is_score      = cfbd_scoring and score_went_up
+        prev_away     = away_sc
+        prev_home     = home_sc
         action_dt  = to_et(p.get("wallclock") or p.get("wallClock") or "")
         down       = p.get("down")     or 0
         distance   = p.get("distance") or 0
