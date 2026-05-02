@@ -91,13 +91,13 @@ def to_et(raw: str):
         return None
 
 def fmt_et(dt) -> str:
-    return dt.strftime("%-I:%M %p ET") if dt else "TBD"
+    return dt.strftime("%H:%M ET") if dt else "TBD"
 
 def fmt_full_et(dt) -> str:
     if not dt:
         return "N/A"
     label = "EDT" if dt.dst() != timedelta(0) else "EST"
-    return dt.strftime(f"%Y-%m-%d %H:%M:%S {label}")
+    return dt.strftime(f"%Y-%m-%d %H:%M:%S ET")
 
 def espn_logo(team_id) -> str:
     return f"https://a.espncdn.com/i/teamlogos/ncaa/500/{team_id}.png"
@@ -176,7 +176,7 @@ def cfbd_find_game_id(away_name, home_name, game_date, season_year):
     def search(team):
         try:
             r = requests.get(f"{CFBD_BASE}/games", headers=cfbd_headers(),
-                params={"year": season_year, "team": team, "seasonType": "both"}, timeout=10)
+                params={"year": season_year, "team": team}, timeout=10)
             r.raise_for_status()
             return r.json()
         except Exception as e:
@@ -262,18 +262,27 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
 
     raw        = cfbd_fetch_plays(cfbd_id, year, week)
     events     = []
-    prev_total = 0
+    prev_away  = 0
+    prev_home  = 0
 
     for p in raw:
         period_num = p.get("period", 0)
         desc       = p.get("playText")    or p.get("play_text")   or ""
         play_type  = p.get("playType")    or p.get("play_type")   or ""
-        clock_val  = p.get("clock")       or p.get("clockTime")   or ""
+        _clock_raw = p.get("clock") or p.get("clockTime") or ""
+        if isinstance(_clock_raw, dict):
+            _mins = int(_clock_raw.get("minutes", 0) or 0)
+            _secs = int(_clock_raw.get("seconds", 0) or 0)
+            clock_val = f"{_mins:02}:{_secs:02}"
+        elif isinstance(_clock_raw, str):
+            clock_val = _clock_raw
+        else:
+            clock_val = ""
         away_sc    = int(p.get("awayScore") or p.get("away_score") or 0)
         home_sc    = int(p.get("homeScore") or p.get("home_score") or 0)
-        total      = away_sc + home_sc
-        is_score   = total > prev_total
-        prev_total = total
+        is_score   = (away_sc != prev_away or home_sc != prev_home) and (away_sc + home_sc > 0)
+        prev_away  = away_sc
+        prev_home  = home_sc
         action_dt  = to_et(p.get("wallclock") or p.get("wallClock") or "")
         down       = p.get("down")     or 0
         distance   = p.get("distance") or 0
@@ -451,7 +460,7 @@ if st.session_state.selected_cfbd_id:
 else:
     st.markdown("Search by team name to find a game, then click to load its play-by-play.")
 
-    col_a, col_b, col_c = st.columns([3, 1, 1])
+    col_a, col_b = st.columns([3, 1])
     with col_a:
         search_team = st.text_input("Team name", placeholder="e.g. Alabama, Miami, Ohio State", label_visibility="collapsed")
     with col_b:
@@ -460,9 +469,6 @@ else:
             value=datetime.today().year if datetime.today().month > 7 else datetime.today().year - 1,
             step=1, label_visibility="collapsed",
         )
-    with col_c:
-        search_type = st.selectbox("Type", ["both", "regular", "postseason"], label_visibility="collapsed")
-
     if st.button("🔎 Find Games", use_container_width=True):
         if not cfbd_key:
             st.error("No CFBD API key found. Add CFBD_API_KEY to your Streamlit secrets.")
@@ -473,7 +479,7 @@ else:
                 try:
                     r = requests.get(
                         f"{CFBD_BASE}/games", headers=cfbd_headers(),
-                        params={"year": int(search_year), "team": search_team.strip(), "seasonType": search_type},
+                        params={"year": int(search_year), "team": search_team.strip()},
                         timeout=10,
                     )
                     r.raise_for_status()
