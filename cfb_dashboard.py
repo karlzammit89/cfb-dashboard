@@ -260,7 +260,8 @@ def cfbd_fetch_plays(game_id: int, year: int, week: int) -> list:
 def fetch_all_cfbd_teams() -> list:
     """Fetch all FBS/FCS teams from CFBD — cached for 24h."""
     try:
-        r = requests.get(f"{CFBD_BASE}/teams", headers=cfbd_headers(), timeout=10)
+        r = requests.get(f"{CFBD_BASE}/teams", headers=cfbd_headers(),
+            params={"classification": "fbs"}, timeout=10)
         r.raise_for_status()
         data = r.json()
         if isinstance(data, list):
@@ -280,7 +281,8 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
     prev_home  = 0
 
     for p in raw:
-        period_num = p.get("period", 0)
+        period_num   = p.get("period", 0)
+        drive_num    = p.get("driveNumber") or p.get("drive_number") or ""
         desc       = p.get("playText")    or p.get("play_text")   or ""
         play_type  = p.get("playType")    or p.get("play_type")   or ""
         _clock_raw = p.get("clock") or p.get("clockTime") or ""
@@ -335,6 +337,7 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
 
         events.append({
             "period":        period_num,
+            "drive_num":     drive_num,
             "period_label":  period_label(period_num),
             "clock_str":     clock_val,
             "desc":          desc,
@@ -439,16 +442,15 @@ if st.session_state.selected_cfbd_id:
     ge_default     = max(all_dts) if all_dts else None
     all_periods    = sorted({e["period_label"] for e in events},
         key=lambda x: (x.startswith("OT"), int(x[1:]) if x.startswith("Q") else int(x[2:]) + 100))
-    all_play_types = sorted({e["play_type"] for e in events if e["play_type"]})
     all_offenses   = sorted({e["offense"] for e in events if e["offense"]})
 
     USE_Q  = st.checkbox("🏈 Filter by Quarter / OT")
-    USE_T  = st.checkbox("🕐 Filter by Wall-Clock Time (ET)")
-    USE_SC = st.checkbox("🔥 Scoring Plays Only")
-    USE_PT = st.checkbox("📋 Filter by Play Type")
+    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)")
     USE_TM = st.checkbox("🏟️ Filter by Possession")
+    USE_SC = st.checkbox("🔥 Scoring Plays Only")
 
-    sel_quarters = sel_types = sel_offenses = []
+    sel_quarters = sel_offenses = []
+    sel_types = []  # unused — kept for passes() compat
     START_DT = END_DT = None
 
     if USE_Q:
@@ -466,8 +468,6 @@ if st.session_state.selected_cfbd_id:
                 et_ = st.time_input("End time",   ge_default.time(), step=60, key="et_")
             START_DT = datetime.combine(sd, st_).replace(tzinfo=ET)
             END_DT   = datetime.combine(ed, et_).replace(tzinfo=ET)
-    if USE_PT:
-        sel_types = st.multiselect("Play types", options=all_play_types)
     if USE_TM:
         sel_offenses = st.multiselect("Offense", options=all_offenses)
 
@@ -477,7 +477,6 @@ if st.session_state.selected_cfbd_id:
             if USE_T  and START_DT and END_DT:
                 if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
             if USE_SC and not e["is_scoring"]:                                        return False
-            if USE_PT and sel_types    and e["play_type"] not in sel_types:          return False
             if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
             return True
         st.session_state.filtered_events = [e for e in events if passes(e)]
@@ -504,7 +503,8 @@ if st.session_state.selected_cfbd_id:
         if e["play_type"]: meta_parts.append(f"**{e['play_type']}**")
         if e["offense"]:   meta_parts.append(f"{e['offense']} ball")
         if meta_parts:     st.caption("  ·  ".join(meta_parts))
-        st.markdown(f"📊 **Score:** {e['score_str']}" + (" &nbsp; 🔥 *Scoring Play!*" if e["is_scoring"] else ""))
+        drive_str = f"🚗 **Drive {e['drive_num']}** &nbsp;|&nbsp; " if e["drive_num"] else ""
+        st.markdown(f"{drive_str}📊 **Score:** {e['score_str']}" + (" &nbsp; 🔥 *Scoring Play!*" if e["is_scoring"] else ""))
         if e["down_str"]:        st.markdown(f"📏 **Down & Distance:** {e['down_str']}")
         if e["yards_gained"] is not None: st.markdown(f"📐 **Yards Gained:** {e['yards_gained']}")
         st.markdown(f"📋 **Play:** {e['desc']}")
