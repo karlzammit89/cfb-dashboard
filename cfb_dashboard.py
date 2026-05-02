@@ -459,11 +459,11 @@ if st.session_state.selected_cfbd_id:
     total  = len(events)
     pct    = int(100 * has_wc / total) if total else 0
     if pct == 100:
-        st.success(f"🕐 Wall-clock timestamps on all {total} plays")
+        st.success(f"🕐 Timestamps on all {total} plays")
     elif pct >= 70:
-        st.info(f"🕐 Wall-clock timestamps on {has_wc}/{total} plays ({pct}%)")
+        st.info(f"🕐 Timestamps on {has_wc}/{total} plays ({pct}%)")
     else:
-        st.warning(f"🕐 Wall-clock sparse: {has_wc}/{total} plays ({pct}%) — time filter may return few results")
+        st.warning(f"🕐 Timestamps sparse: {has_wc}/{total} plays ({pct}%) — time filter may return few results")
 
     st.divider()
 
