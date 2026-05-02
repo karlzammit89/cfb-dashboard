@@ -549,23 +549,22 @@ else:
             btn_label   = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  {week_label}"
 
             with st.container(border=True):
-                la, lb, lc, ld, le = st.columns([1, 4, 1, 4, 1])
-                with la:
-                    if g_away_id:
-                        st.image(espn_logo(g_away_id), width=32)
-                with lb:
-                    st.markdown(f"**{g_away}**")
-                with lc:
-                    st.markdown("<div style='text-align:center;padding-top:4px'>@</div>", unsafe_allow_html=True)
-                with ld:
-                    st.markdown(f"**{g_home}**")
-                with le:
-                    if g_home_id:
-                        st.image(espn_logo(g_home_id), width=32)
-                score_disp = score_str.strip()
-                meta = f"{score_disp}  ·  " if score_disp else ""
-                st.caption(f"{meta}{g_date}  ·  {week_label}")
-                if st.button("▶ Open", key=f"pick_{g_id}", use_container_width=True):
+                away_pts_str = str(g_away_pts) if g_away_pts != "" else ""
+                home_pts_str = str(g_home_pts) if g_home_pts != "" else ""
+                _a_logo = f"<img src='{espn_logo(g_away_id)}' style='width:22px;height:22px;object-fit:contain'/>" if g_away_id else "<span style='width:22px;display:inline-block'></span>"
+                _h_logo = f"<img src='{espn_logo(g_home_id)}' style='width:22px;height:22px;object-fit:contain'/>" if g_home_id else "<span style='width:22px;display:inline-block'></span>"
+                _a_score = f"<span style='margin-left:auto;font-size:15px;font-weight:700;color:#aaa'>{away_pts_str}</span>" if away_pts_str else ""
+                _h_score = f"<span style='margin-left:auto;font-size:15px;font-weight:700;color:#aaa'>{home_pts_str}</span>" if home_pts_str else ""
+                card_html = (
+                    f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:3px'>{_a_logo}"
+                    f"<span style='font-size:15px;font-weight:700'>{g_away}</span>{_a_score}</div>"
+                    f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px'>{_h_logo}"
+                    f"<span style='font-size:15px;font-weight:700'>{g_home}</span>{_h_score}</div>"
+                    f"<div style='font-size:12px;color:#888;border-top:1px solid rgba(255,255,255,0.07);padding-top:4px'>"
+                    f"{g_date} &middot; {week_label}</div>"
+                )
+                st.markdown(card_html, unsafe_allow_html=True)
+                if st.button("\u25b6 Open", key=f"pick_{g_id}", use_container_width=True):
                     for k in ("cached_events", "cached_game_id", "filtered_events"):
                         st.session_state[k] = None
                     st.session_state.filters_applied    = False
