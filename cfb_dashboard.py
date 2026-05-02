@@ -520,11 +520,14 @@ if st.session_state.selected_cfbd_id:
         if n == 0:
             st.warning("⚠️ No plays match — adjust filters and click Apply again.")
             st.stop()
-        if USE_Q:  st.info(f"🏈 Quarter: {', '.join(sel_quarters or ['none'])} — {n}/{t}")
-        if USE_T and START_DT:
-            st.info(f"🕐 {START_DT.strftime('%H:%M')} → {END_DT.strftime('%H:%M')} ET — {n}/{t}")
-        if USE_SC: st.info(f"🔥 Scoring only — {n}/{t}")
-        if USE_TM: st.info(f"🏟️ {', '.join(sel_offenses or ['none'])} — {n}/{t}")
+        if USE_Q:
+            st.info(f"🏈 Quarter filter: {', '.join(sel_quarters or ['none'])} — showing {n} of {t} plays")
+        if USE_T and START_DT and END_DT:
+            st.info(f"🕐 Time filter: {START_DT.strftime('%Y-%m-%d %H:%M ET')} → {END_DT.strftime('%Y-%m-%d %H:%M ET')} — showing {n} of {t} plays")
+        if USE_TM:
+            st.info(f"🏟️ Possession filter: {', '.join(sel_offenses or ['none'])} — showing {n} of {t} plays")
+        if USE_SC:
+            st.info(f"🏈 Scoring plays filter — showing {n} of {t} plays")
 
     for e in filtered:
         st.subheader(f"{e['emoji']} {e['period_label']} | ⏱️ {e['clock_str']}")
