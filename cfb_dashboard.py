@@ -256,6 +256,23 @@ def cfbd_fetch_plays(game_id: int, year: int, week: int) -> list:
     except Exception:
         return []
 
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_game_scores(game_id: int) -> tuple:
+    """Return (away_score, home_score) from CFBD /games — authoritative final score."""
+    try:
+        r = requests.get(f"{CFBD_BASE}/games", headers=cfbd_headers(),
+            params={"id": game_id}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if isinstance(data, list) and data:
+            g = data[0]
+            away_sc = g.get("awayPoints") or g.get("away_points") or 0
+            home_sc = g.get("homePoints") or g.get("home_points") or 0
+            return int(away_sc), int(home_sc)
+    except Exception:
+        pass
+    return None, None
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_all_cfbd_teams() -> list:
     """Fetch Division 1 FBS teams from CFBD — cached for 24h."""
@@ -410,8 +427,15 @@ if st.session_state.selected_cfbd_id:
         st.warning("No plays returned. The game may not be indexed yet, or the week number may be wrong. Try searching again with the correct week.")
         st.stop()
 
-    live_away = events[-1]["away_score"]
-    live_home = events[-1]["home_score"]
+    # Use authoritative score from /games endpoint — play-by-play score
+    # mapping can be wrong on the last play due to offense/defense flipping
+    _final_away, _final_home = fetch_game_scores(cfbd_id)
+    if _final_away is not None:
+        live_away, live_home = _final_away, _final_home
+    else:
+        # Fallback: find max total score seen across all plays
+        live_away = max((e["away_score"] for e in events), default=0)
+        live_home = max((e["home_score"] for e in events), default=0)
 
     c1, c2, c3 = st.columns([1, 6, 1])
     with c1:
