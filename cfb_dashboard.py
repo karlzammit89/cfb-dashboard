@@ -258,14 +258,20 @@ def cfbd_fetch_plays(game_id: int, year: int, week: int) -> list:
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_all_cfbd_teams() -> list:
-    """Fetch all FBS/FCS teams from CFBD — cached for 24h."""
+    """Fetch Division 1 FBS teams from CFBD — cached for 24h."""
     try:
-        r = requests.get(f"{CFBD_BASE}/teams", headers=cfbd_headers(),
-            params={"classification": "fbs"}, timeout=10)
+        r = requests.get(f"{CFBD_BASE}/teams", headers=cfbd_headers(), timeout=10)
         r.raise_for_status()
         data = r.json()
         if isinstance(data, list):
-            return sorted([t.get("school", "") for t in data if t.get("school")], key=str.lower)
+            # Filter client-side — CFBD v5 uses "classification" field on each
+            # team object with values like "fbs", "fcs", "ii", "iii"
+            fbs = [
+                t.get("school", "") for t in data
+                if t.get("school")
+                and (t.get("classification") or "").lower() == "fbs"
+            ]
+            return sorted(fbs, key=str.lower)
     except Exception:
         pass
     return []
