@@ -247,7 +247,12 @@ def cfbd_fetch_plays(game_id: int, year: int, week: int) -> list:
             params={"gameId": game_id, "year": year, "week": week}, timeout=15)
         r.raise_for_status()
         data = r.json()
-        return data if isinstance(data, list) else []
+        if not isinstance(data, list):
+            return []
+        # CFBD returns all plays for the week — filter to only this game
+        filtered = [p for p in data if str(p.get("gameId") or p.get("game_id") or "") == str(game_id)]
+        # If gameId field isn't present in the response, return all (safe fallback)
+        return filtered if filtered else data
     except Exception:
         return []
 
