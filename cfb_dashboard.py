@@ -299,16 +299,20 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
         action_dt  = to_et(p.get("wallclock") or p.get("wallClock") or "")
         down       = p.get("down")     or 0
         distance   = p.get("distance") or 0
-        yard_line  = p.get("yardline") or p.get("yardLine") or p.get("yard_line") or 0
+        yard_line    = p.get("yardline") or p.get("yardLine") or p.get("yard_line") or 0
+        yards_to_goal = p.get("yardsToGoal") or p.get("yards_to_goal") or 0
         offense    = p.get("offense")  or p.get("offenseTeam") or ""
         down_str   = ""
         if down > 0:
             ords     = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
             dist     = "Goal" if distance == 0 else str(distance)
-            if yard_line <= 50:
-                yard_str = f"own {yard_line}"
+            # yardsToGoal: yards remaining to the offense's end zone they're attacking
+            # > 50 = own half,  <= 50 = opponent's half
+            ytg = yards_to_goal or yard_line
+            if ytg > 50:
+                yard_str = f"own {100 - ytg}"
             else:
-                yard_str = f"opp {100 - yard_line}"
+                yard_str = f"opp {ytg}"
             down_str = f"{ords.get(down,'?')} & {dist} at {yard_str}"
 
         events.append({
