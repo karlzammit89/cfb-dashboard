@@ -256,6 +256,19 @@ def cfbd_fetch_plays(game_id: int, year: int, week: int) -> list:
     except Exception:
         return []
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_all_cfbd_teams() -> list:
+    """Fetch all FBS/FCS teams from CFBD — cached for 24h."""
+    try:
+        r = requests.get(f"{CFBD_BASE}/teams", headers=cfbd_headers(), timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if isinstance(data, list):
+            return sorted([t.get("school", "") for t in data if t.get("school")], key=str.lower)
+    except Exception:
+        pass
+    return []
+
 def get_events(cfbd_id: int, year: int, week: int) -> list:
     if st.session_state.cached_game_id == cfbd_id and st.session_state.cached_events is not None:
         return st.session_state.cached_events
@@ -306,13 +319,18 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
         if down > 0:
             ords     = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
             dist     = "Goal" if distance == 0 else str(distance)
-            # yardsToGoal: yards remaining to the offense's end zone they're attacking
+            # yardsToGoal: yards remaining to the end zone the offense is attacking
             # > 50 = own half,  <= 50 = opponent's half
             ytg = yards_to_goal or yard_line
+            # Abbr = first word of team name (e.g. "Notre Dame" -> "ND" not ideal,
+            # but CFBD offense field is already short e.g. "Notre Dame", so take first word)
+            off_abbr = (offense.split()[0] if offense else "OFF").upper()
+            def_team = p.get("defense") or p.get("defenseTeam") or ""
+            def_abbr = (def_team.split()[0] if def_team else "DEF").upper()
             if ytg > 50:
-                yard_str = f"own {100 - ytg}"
+                yard_str = f"{off_abbr} {100 - ytg}"
             else:
-                yard_str = f"opp {ytg}"
+                yard_str = f"{def_abbr} {ytg}"
             down_str = f"{ords.get(down,'?')} & {dist} at {yard_str}"
 
         events.append({
@@ -360,6 +378,8 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
 if st.session_state.selected_cfbd_id:
 
     cfbd_id   = st.session_state.selected_cfbd_id
+    away_name = st.session_state.selected_away_name
+    home_name = st.session_state.selected_home_name
     away_abbr = st.session_state.selected_away_abbr
     home_abbr = st.session_state.selected_home_abbr
     away_eid  = st.session_state.selected_away_eid
@@ -392,9 +412,9 @@ if st.session_state.selected_cfbd_id:
         st.markdown(
             f"""<div style="display:flex;align-items:center;justify-content:center;
                 font-weight:700;font-size:clamp(16px,2.6vw,28px);gap:10px;flex-wrap:wrap;text-align:center;">
-                <span>{away_abbr}</span><span style="color:#888;">{live_away}</span>
+                <span>{away_name}</span><span style="color:#888;">{live_away}</span>
                 <span>–</span>
-                <span style="color:#888;">{live_home}</span><span>{home_abbr}</span>
+                <span style="color:#888;">{live_home}</span><span>{home_name}</span>
             </div>""",
             unsafe_allow_html=True,
         )
@@ -491,15 +511,23 @@ if st.session_state.selected_cfbd_id:
         st.markdown(f"🕐 **Wall Clock (ET):** `{e['action_dt_str']}`")
         st.divider()
 
+
 # ══════════════════════════════════════════════════════════════
 # HOME — SEARCH GAMES
 # ══════════════════════════════════════════════════════════════
 else:
     st.markdown("Search by team name to find a game, then click to load its play-by-play.")
 
+    all_teams = fetch_all_cfbd_teams()
     col_a, col_b = st.columns([3, 1])
     with col_a:
-        search_team = st.text_input("Team name", placeholder="e.g. Alabama, Miami, Ohio State", label_visibility="collapsed")
+        if all_teams:
+            search_team = st.selectbox("Team", options=[""] + all_teams,
+                format_func=lambda x: "Select a team..." if x == "" else x,
+                label_visibility="collapsed")
+        else:
+            search_team = st.text_input("Team name", placeholder="e.g. Alabama, Miami, Ohio State",
+                label_visibility="collapsed")
     with col_b:
         search_year = st.number_input(
             "Year", min_value=2000, max_value=2030,
