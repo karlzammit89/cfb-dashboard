@@ -540,7 +540,7 @@ if st.session_state.selected_cfbd_id:
         if e["down_str"]:        st.markdown(f"📏 **Down & Distance:** {e['down_str']}")
         if e["yards_gained"] is not None: st.markdown(f"📐 **Yards Gained:** {e['yards_gained']}")
         st.markdown(f"📋 **Play:** {e['desc']}")
-        st.markdown(f"🕐 **Wall Clock (ET):** `{e['action_dt_str']}`")
+        st.markdown(f"🕐 **Time (ET):** `{e['action_dt_str']}`")
         st.divider()
 
 
