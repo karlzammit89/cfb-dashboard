@@ -74,6 +74,8 @@ _defaults = {
     "filters_applied":    False,
     "search_results":     [],
     "search_done":        False,
+    "last_search_year":   None,
+    "last_search_team":   None,
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -459,11 +461,11 @@ if st.session_state.selected_cfbd_id:
     total  = len(events)
     pct    = int(100 * has_wc / total) if total else 0
     if pct == 100:
-        st.success(f"🕐 Timestamps on all {total} plays")
+        st.success(f"🕐 Wall-clock timestamps on all {total} plays")
     elif pct >= 70:
-        st.info(f"🕐 Timestamps on {has_wc}/{total} plays ({pct}%)")
+        st.info(f"🕐 Wall-clock timestamps on {has_wc}/{total} plays ({pct}%)")
     else:
-        st.warning(f"🕐 Timestamps sparse: {has_wc}/{total} plays ({pct}%) — time filter may return few results")
+        st.warning(f"🕐 Wall-clock sparse: {has_wc}/{total} plays ({pct}%) — time filter may return few results")
 
     st.divider()
 
@@ -540,7 +542,7 @@ if st.session_state.selected_cfbd_id:
         if e["down_str"]:        st.markdown(f"📏 **Down & Distance:** {e['down_str']}")
         if e["yards_gained"] is not None: st.markdown(f"📐 **Yards Gained:** {e['yards_gained']}")
         st.markdown(f"📋 **Play:** {e['desc']}")
-        st.markdown(f"🕐 **Time (ET):** `{e['action_dt_str']}`")
+        st.markdown(f"🕐 **Wall Clock (ET):** `{e['action_dt_str']}`")
         st.divider()
 
 
@@ -561,9 +563,10 @@ else:
             search_team = st.text_input("Team name", placeholder="e.g. Alabama, Miami, Ohio State",
                 label_visibility="collapsed")
     with col_b:
+        _year_default = st.session_state.last_search_year or datetime.today().year
         search_year = st.number_input(
             "Year", min_value=2000, max_value=2030,
-            value=datetime.today().year,
+            value=_year_default,
             step=1, label_visibility="collapsed",
         )
     if st.button("🔎 Find Games", use_container_width=True):
@@ -572,6 +575,8 @@ else:
         elif not search_team.strip():
             st.warning("Enter a team name first.")
         else:
+            st.session_state.last_search_year = int(search_year)
+            st.session_state.last_search_team = search_team.strip()
             with st.spinner(f"Searching CFBD for {search_team}…"):
                 try:
                     r = requests.get(
