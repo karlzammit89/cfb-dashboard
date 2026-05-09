@@ -74,8 +74,9 @@ _defaults = {
     "filters_applied":    False,
     "search_results":     [],
     "search_done":        False,
-    "last_search_year":   None,
-    "last_search_team":   None,
+    "last_search_year":    None,
+    "last_search_team":    None,
+    "last_search_results": [],
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -415,12 +416,28 @@ if st.session_state.selected_cfbd_id:
     g_year    = st.session_state.get("selected_year") or datetime.today().year
     g_week    = st.session_state.get("selected_week") or 1
 
-    if st.button("⬅ Back"):
-        for k in ("cached_events", "cached_game_id", "filtered_events"):
-            st.session_state[k] = None
-        st.session_state.filters_applied  = False
-        st.session_state.selected_cfbd_id = None
-        st.rerun()
+    _last_team = st.session_state.get("last_search_team") or ""
+    _last_year = st.session_state.get("last_search_year") or ""
+    _back_label = f"⬅ Back to {_last_team} {_last_year}" if _last_team else "⬅ Back"
+
+    btn_col1, btn_col2 = st.columns([1, 1], gap="small")
+    with btn_col1:
+        if st.button("⬅ Back", use_container_width=True):
+            for k in ("cached_events", "cached_game_id", "filtered_events"):
+                st.session_state[k] = None
+            st.session_state.filters_applied  = False
+            st.session_state.selected_cfbd_id = None
+            st.rerun()
+    with btn_col2:
+        if _last_team and st.button(_back_label, use_container_width=True):
+            for k in ("cached_events", "cached_game_id", "filtered_events"):
+                st.session_state[k] = None
+            st.session_state.filters_applied  = False
+            st.session_state.selected_cfbd_id = None
+            # Trigger a re-search of the last team/year
+            st.session_state.search_done     = True
+            st.session_state.search_results  = st.session_state.get("last_search_results", [])
+            st.rerun()
 
     with st.spinner("Loading play-by-play…"):
         events = get_events(cfbd_id, g_year, g_week)
@@ -439,7 +456,7 @@ if st.session_state.selected_cfbd_id:
         live_away = max((e["away_score"] for e in events), default=0)
         live_home = max((e["home_score"] for e in events), default=0)
 
-    c1, c2, c3 = st.columns([1, 6, 1])
+    c1, c2, c3 = st.columns([1, 6, 1], gap="small")
     with c1:
         if away_eid:
             st.image(espn_logo(away_eid), width=60)
@@ -586,8 +603,9 @@ else:
                     )
                     r.raise_for_status()
                     found = r.json()
-                    st.session_state.search_results = found if isinstance(found, list) else []
-                    st.session_state.search_done    = True
+                    st.session_state.search_results      = found if isinstance(found, list) else []
+                    st.session_state.last_search_results = found if isinstance(found, list) else []
+                    st.session_state.search_done         = True
                     if not st.session_state.search_results:
                         st.warning("No games found — try a different name or year.")
                 except Exception as e:
