@@ -420,7 +420,7 @@ if st.session_state.selected_cfbd_id:
     _last_year = st.session_state.get("last_search_year") or ""
     _back_label = f"⬅ Back to {_last_team} {_last_year}" if _last_team else "⬅ Back"
 
-    btn_col1, btn_col2 = st.columns([1, 1], gap="small")
+    btn_col1, btn_col2, _ = st.columns([1, 2, 5], gap="small")
     with btn_col1:
         if st.button("⬅ Back", use_container_width=True):
             for k in ("cached_events", "cached_game_id", "filtered_events"):
@@ -434,7 +434,6 @@ if st.session_state.selected_cfbd_id:
                 st.session_state[k] = None
             st.session_state.filters_applied  = False
             st.session_state.selected_cfbd_id = None
-            # Trigger a re-search of the last team/year
             st.session_state.search_done     = True
             st.session_state.search_results  = st.session_state.get("last_search_results", [])
             st.rerun()
