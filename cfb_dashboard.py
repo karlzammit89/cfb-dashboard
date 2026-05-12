@@ -402,7 +402,76 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
     st.session_state.cached_game_id = cfbd_id
     return events
 
-https://github.com/karlzammit89/cfb-dashboard/edit/main/cfb_dashboard.py
+# ══════════════════════════════════════════════════════════════
+# GAME FEED VIEW
+# ══════════════════════════════════════════════════════════════
+if st.session_state.selected_cfbd_id:
+
+    cfbd_id   = st.session_state.selected_cfbd_id
+    away_name = st.session_state.selected_away_name
+    home_name = st.session_state.selected_home_name
+    away_abbr = st.session_state.selected_away_abbr
+    home_abbr = st.session_state.selected_home_abbr
+    away_eid  = st.session_state.selected_away_eid
+    home_eid  = st.session_state.selected_home_eid
+    g_year    = st.session_state.get("selected_year") or datetime.today().year
+    g_week    = st.session_state.get("selected_week") or 1
+
+    _last_team = st.session_state.get("last_search_team") or ""
+    _last_year = st.session_state.get("last_search_year") or ""
+    _back_label = f"⬅ Back to {_last_team} {_last_year}" if _last_team else "⬅ Back"
+
+    # New 5-column layout: [Back, Back to Search, Refresh, Badge, Spacer]
+    btn_col1, btn_col2, btn_col3, btn_col4, _ = st.columns([1, 2, 1, 1.5, 2.5], gap="small")
+    
+    with btn_col1:
+        if st.button("⬅ Back", use_container_width=True):
+            for k in ("cached_events", "cached_game_id", "filtered_events"):
+                st.session_state[k] = None
+            st.session_state.filters_applied  = False
+            st.session_state.selected_cfbd_id = None
+            st.rerun()
+
+    with btn_col2:
+        if _last_team and st.button(_back_label, use_container_width=True):
+            for k in ("cached_events", "cached_game_id", "filtered_events"):
+                st.session_state[k] = None
+            st.session_state.filters_applied  = False
+            st.session_state.selected_cfbd_id = None
+            st.session_state.search_done      = True
+            st.session_state.search_results   = st.session_state.get("last_search_results", [])
+            st.rerun()
+
+    with btn_col3:
+        if st.button("🔄 Refresh", use_container_width=True):
+            st.session_state.cached_events  = None
+            st.session_state.cached_game_id = None
+            st.session_state.last_refresh   = datetime.now(ET)
+            st.cache_data.clear()
+            st.rerun()
+
+    # Move the badge into btn_col4 and remove the vertical margins
+    with btn_col4:
+        if st.session_state.last_refresh:
+            st.markdown(
+                f"""
+                <div style="
+                    background-color: #2e7d32; 
+                    color: white; 
+                    padding: 8px 12px; 
+                    border-radius: 4px; 
+                    font-size: 14px; 
+                    font-weight: bold;
+                    width: fit-content;
+                    margin: 0;          /* Left-align to stay close to Refresh */
+                    display: block;
+                    white-space: nowrap;
+                ">
+                    Last refresh {st.session_state.last_refresh.strftime('%H:%M:%S ET')}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     with st.spinner("Loading play-by-play…"):
         events = get_events(cfbd_id, g_year, g_week)
