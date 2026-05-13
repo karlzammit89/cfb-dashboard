@@ -677,12 +677,20 @@ else:
             btn_label   = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  {week_label}"
 
             with st.container(border=True):
+                # Check if points are present (indicates game started/indexed)
+                has_started = g.get("awayPoints") is not None or g.get("away_points") is not None
+                
+                # Dynamic labels based on game state
+                btn_label = "▶ Open" if has_started else "⏳ Not Started"
+                btn_help = "Data will be available once the game kicks off." if not has_started else "View game data"
+
                 away_pts_str = str(g_away_pts) if g_away_pts != "" else ""
                 home_pts_str = str(g_home_pts) if g_home_pts != "" else ""
                 _a_logo = f"<img src='{espn_logo(g_away_id)}' style='width:22px;height:22px;object-fit:contain'/>" if g_away_id else "<span style='width:22px;display:inline-block'></span>"
                 _h_logo = f"<img src='{espn_logo(g_home_id)}' style='width:22px;height:22px;object-fit:contain'/>" if g_home_id else "<span style='width:22px;display:inline-block'></span>"
                 _a_score = f"<span style='margin-left:auto;font-size:15px;font-weight:700;color:#aaa'>{away_pts_str}</span>" if away_pts_str else ""
                 _h_score = f"<span style='margin-left:auto;font-size:15px;font-weight:700;color:#aaa'>{home_pts_str}</span>" if home_pts_str else ""
+                
                 card_html = (
                     f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:3px'>{_a_logo}"
                     f"<span style='font-size:15px;font-weight:700'>{g_away}</span>{_a_score}</div>"
@@ -692,7 +700,15 @@ else:
                     f"{g_date} &middot; {week_label}</div>"
                 )
                 st.markdown(card_html, unsafe_allow_html=True)
-                if st.button("\u25b6 Open", key=f"pick_{g_id}", use_container_width=True):
+                
+                # Button is disabled if game hasn't started
+                if st.button(
+                    btn_label, 
+                    key=f"pick_{g_id}", 
+                    use_container_width=True, 
+                    disabled=not has_started,
+                    help=btn_help
+                ):
                     st.session_state.last_refresh = datetime.now(ET)
                     for k in ("cached_events", "cached_game_id", "filtered_events"):
                         st.session_state[k] = None
