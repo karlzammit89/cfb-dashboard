@@ -430,6 +430,7 @@ if st.session_state.selected_cfbd_id:
                 st.session_state[k] = None
             st.session_state.filters_applied  = False
             st.session_state.selected_cfbd_id = None
+            st.session_state.last_refresh     = None 
             st.rerun()
 
     with btn_col2:
@@ -440,8 +441,9 @@ if st.session_state.selected_cfbd_id:
             st.session_state.selected_cfbd_id = None
             st.session_state.search_done      = True
             st.session_state.search_results   = st.session_state.get("last_search_results", [])
+            st.session_state.last_refresh     = None 
             st.rerun()
-
+            
     with btn_col3:
         if st.button("🔄 Refresh", use_container_width=True):
             st.session_state.cached_events  = None
@@ -691,6 +693,7 @@ else:
                 )
                 st.markdown(card_html, unsafe_allow_html=True)
                 if st.button("\u25b6 Open", key=f"pick_{g_id}", use_container_width=True):
+                    st.session_state.last_refresh = datetime.now(ET)
                     for k in ("cached_events", "cached_game_id", "filtered_events"):
                         st.session_state[k] = None
                     st.session_state.filters_applied    = False
