@@ -682,7 +682,7 @@ else:
                 
                 # Dynamic labels based on game state
                 btn_label = "▶ Open" if has_started else "⏳ Not Started"
-                btn_help = "Data will be available once the game kicks off." if not has_started else "View game data"
+                btn_help = "Data will be available once the game starts." if not has_started else "View game data"
 
                 away_pts_str = str(g_away_pts) if g_away_pts != "" else ""
                 home_pts_str = str(g_home_pts) if g_home_pts != "" else ""
