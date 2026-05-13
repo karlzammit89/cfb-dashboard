@@ -677,35 +677,38 @@ else:
             btn_label   = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  {week_label}"
 
             with st.container(border=True):
-                away_pts_str = str(g_away_pts) if g_away_pts != "" else ""
-                home_pts_str = str(g_home_pts) if g_home_pts != "" else ""
-                _a_logo = f"<img src='{espn_logo(g_away_id)}' style='width:22px;height:22px;object-fit:contain'/>" if g_away_id else "<span style='width:22px;display:inline-block'></span>"
-                _h_logo = f"<img src='{espn_logo(g_home_id)}' style='width:22px;height:22px;object-fit:contain'/>" if g_home_id else "<span style='width:22px;display:inline-block'></span>"
-                _a_score = f"<span style='margin-left:auto;font-size:15px;font-weight:700;color:#aaa'>{away_pts_str}</span>" if away_pts_str else ""
-                _h_score = f"<span style='margin-left:auto;font-size:15px;font-weight:700;color:#aaa'>{home_pts_str}</span>" if home_pts_str else ""
-                card_html = (
-                    f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:3px'>{_a_logo}"
-                    f"<span style='font-size:15px;font-weight:700'>{g_away}</span>{_a_score}</div>"
-                    f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px'>{_h_logo}"
-                    f"<span style='font-size:15px;font-weight:700'>{g_home}</span>{_h_score}</div>"
-                    f"<div style='font-size:12px;color:#888;border-top:1px solid rgba(255,255,255,0.07);padding-top:4px'>"
-                    f"{g_date} &middot; {week_label}</div>"
-                )
-                st.markdown(card_html, unsafe_allow_html=True)
-                if st.button("\u25b6 Open", key=f"pick_{g_id}", use_container_width=True):
-                    st.session_state.last_refresh = datetime.now(ET)
-                    for k in ("cached_events", "cached_game_id", "filtered_events"):
-                        st.session_state[k] = None
-                    st.session_state.filters_applied    = False
-                    st.session_state.selected_cfbd_id   = g_id
-                    st.session_state.selected_away_name = g_away
-                    st.session_state.selected_home_name = g_home
-                    st.session_state.selected_away_abbr = g_away[:6].upper()
-                    st.session_state.selected_home_abbr = g_home[:6].upper()
-                    st.session_state.selected_away_eid  = g_away_id
-                    st.session_state.selected_home_eid  = g_home_id
-                    st.session_state.selected_year      = int(g.get("season") or g.get("year") or search_year)
-                    st.session_state.selected_week      = int(g.get("week") or 1)
-                    st.session_state.search_results     = []
-                    st.session_state.search_done        = False
-                    st.rerun()
+    # 1. Logic check: if points are None, the game hasn't started/indexed data
+    # We use .get() to avoid KeyErrors
+            pts_check = g.get("awayPoints")
+            game_started = pts_check is not None
+    
+    # 2. Set dynamic label and tooltip
+            btn_label = "▶ Open" if game_started else "⏳ Not Started"
+            btn_help = "Data is available once the game kicks off." if not game_started else "View play-by-play"
+
+            st.markdown(card_html, unsafe_allow_html=True)
+
+    # 3. Use the 'disabled' parameter based on our check
+            if st.button(
+                btn_label, 
+                key=f"pick_{g_id}", 
+                use_container_width=True, 
+                disabled=not game_started,
+                help=btn_help
+            ):
+                st.session_state.last_refresh = datetime.now(ET)
+                for k in ("cached_events", "cached_game_id", "filtered_events"):
+                    st.session_state[k] = None
+                st.session_state.filters_applied    = False
+                st.session_state.selected_cfbd_id   = g_id
+                st.session_state.selected_away_name = g_away
+                st.session_state.selected_home_name = g_home
+                st.session_state.selected_away_abbr = g_away[:6].upper()
+                st.session_state.selected_home_abbr = g_home[:6].upper()
+                st.session_state.selected_away_eid  = g_away_id
+                st.session_state.selected_home_eid  = g_home_id
+                st.session_state.selected_year      = int(g.get("season") or g.get("year") or search_year)
+                st.session_state.selected_week      = int(g.get("week") or 1)
+                st.session_state.search_results     = []
+                st.session_state.search_done        = False
+                st.rerun()
