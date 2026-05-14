@@ -529,10 +529,15 @@ if st.session_state.selected_cfbd_id:
         key=lambda x: (x.startswith("OT"), int(x[1:]) if x.startswith("Q") else int(x[2:]) + 100))
     all_offenses   = sorted({e["offense"] for e in events if e["offense"]})
 
-    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT", key="filter_q")
-    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)", key="filter_t")
-    USE_TM = st.checkbox("🏟️ Filter by Possession", key="filter_tm")
-    USE_SC = st.checkbox("🔥 Scoring Plays Only", key="filter_sc")
+    if "filter_version" not in st.session_state:
+        st.session_state.filter_version = 0
+
+    # Append the version to the keys
+    v = st.session_state.filter_version
+    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT", key=f"q_{v}")
+    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)", key=f"t_{v}")
+    USE_TM = st.checkbox("🏟️ Filter by Possession", key=f"tm_{v}")
+    USE_SC = st.checkbox("🔥 Scoring Plays Only", key=f"sc_{v}")
 
     sel_quarters = sel_offenses = []
     sel_types = []  # unused — kept for passes() compat
@@ -577,10 +582,8 @@ if st.session_state.selected_cfbd_id:
             st.session_state.filtered_events = None
             st.session_state.filters_applied = False
             
-            # 2. Reset the checkbox "ticks" by clearing their keys
-            for key in ["filter_q", "filter_t", "filter_tm", "filter_sc"]:
-                if key in st.session_state:
-                    st.session_state[key] = False
+            # 2. Increment version to reset all checkboxes at once
+            st.session_state.filter_version += 1
             
             st.rerun()
 
