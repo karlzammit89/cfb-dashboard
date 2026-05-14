@@ -529,10 +529,10 @@ if st.session_state.selected_cfbd_id:
         key=lambda x: (x.startswith("OT"), int(x[1:]) if x.startswith("Q") else int(x[2:]) + 100))
     all_offenses   = sorted({e["offense"] for e in events if e["offense"]})
 
-    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT")
-    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)")
-    USE_TM = st.checkbox("🏟️ Filter by Possession")
-    USE_SC = st.checkbox("🔥 Scoring Plays Only")
+    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT", key="filter_q")
+    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)", key="filter_t")
+    USE_TM = st.checkbox("🏟️ Filter by Possession", key="filter_tm")
+    USE_SC = st.checkbox("🔥 Scoring Plays Only", key="filter_sc")
 
     sel_quarters = sel_offenses = []
     sel_types = []  # unused — kept for passes() compat
@@ -573,10 +573,15 @@ if st.session_state.selected_cfbd_id:
 
     with f_btn_2:
         if st.button("🗑️ Remove Filters", use_container_width=True):
-            # Reset session state
+            # 1. Reset the filter data
             st.session_state.filtered_events = None
             st.session_state.filters_applied = False
-            # Rerunning resets the checkboxes/widgets to default (unchecked)
+            
+            # 2. Reset the checkbox "ticks" by clearing their keys
+            for key in ["filter_q", "filter_t", "filter_tm", "filter_sc"]:
+                if key in st.session_state:
+                    st.session_state[key] = False
+            
             st.rerun()
 
     fa       = st.session_state.filters_applied
