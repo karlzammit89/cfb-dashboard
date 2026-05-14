@@ -522,22 +522,29 @@ if st.session_state.selected_cfbd_id:
 
     st.divider()
 
-    all_dts        = [e["action_dt"] for e in events if e["action_dt"]]
-    gs_default     = min(all_dts) if all_dts else None
-    ge_default     = max(all_dts) if all_dts else None
-    all_periods    = sorted({e["period_label"] for e in events},
+    all_dts         = [e["action_dt"] for e in events if e["action_dt"]]
+    gs_default      = min(all_dts) if all_dts else None
+    ge_default      = max(all_dts) if all_dts else None
+    all_periods     = sorted({e["period_label"] for e in events},
         key=lambda x: (x.startswith("OT"), int(x[1:]) if x.startswith("Q") else int(x[2:]) + 100))
-    all_offenses   = sorted({e["offense"] for e in events if e["offense"]})
+    all_offenses    = sorted({e["offense"] for e in events if e["offense"]})
 
-    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT")
-    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)")
-    USE_TM = st.checkbox("🏟️ Filter by Possession")
-    USE_SC = st.checkbox("🔥 Scoring Plays Only")
+    # --- REPLACE STARTING HERE ---
+    
+    # 1. Layout the Checkboxes
+    col_f1, col_f2 = st.columns([1, 1])
+    with col_f1:
+        # We add 'key' so we can reset these manually
+        USE_Q  = st.checkbox("🏈 Filter by Quarter / OT", key="use_q")
+        USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)", key="use_t")
+    with col_f2:
+        USE_TM = st.checkbox("🏟️ Filter by Possession", key="use_tm")
+        USE_SC = st.checkbox("🔥 Scoring Plays Only", key="use_sc")
 
     sel_quarters = sel_offenses = []
-    sel_types = []  # unused — kept for passes() compat
     START_DT = END_DT = None
 
+    # 2. Layout the conditional inputs
     if USE_Q:
         sel_quarters = st.multiselect("Quarters / OT", options=all_periods)
     if USE_T:
@@ -556,20 +563,40 @@ if st.session_state.selected_cfbd_id:
     if USE_TM:
         sel_offenses = st.multiselect("Offense", options=all_offenses)
 
-    if st.button("🚀 Apply Filters"):
-        def passes(e):
-            if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
-            if USE_T  and START_DT and END_DT:
-                if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
-            if USE_SC and not e["is_scoring"]:                                        return False
-            if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
-            return True
-        st.session_state.filtered_events = [e for e in events if passes(e)]
-        st.session_state.filters_applied = True
+    # 3. Action Buttons
+    act_col1, act_col2, _ = st.columns([1, 1, 2])
+    
+    with act_col1:
+        if st.button("🚀 Apply Filters", use_container_width=True, type="primary"):
+            def passes(e):
+                if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
+                if USE_T  and START_DT and END_DT:
+                    if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
+                if USE_SC and not e["is_scoring"]:                                        return False
+                if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:        return False
+                return True
+            st.session_state.filtered_events = [e for e in events if passes(e)]
+            st.session_state.filters_applied = True
+            st.rerun()
+
+    with act_col2:
+        if st.button("🗑️ Remove Filters", use_container_width=True):
+            # Reset everything
+            st.session_state.filters_applied = False
+            st.session_state.filtered_events = None
+            # Reset checkbox states
+            st.session_state.use_q = False
+            st.session_state.use_t = False
+            st.session_state.use_tm = False
+            st.session_state.use_sc = False
+            st.rerun()
+
+    # --- STOP REPLACING HERE ---
+
+    st.divider()
 
     fa       = st.session_state.filters_applied
     filtered = st.session_state.filtered_events if fa else events
-
     if fa:
         n, t = len(filtered), len(events)
         if n == 0:
