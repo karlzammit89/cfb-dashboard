@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 # ──────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ──────────────────────────────────────────────────────────────
-st.set_page_config(page_title="CFB Dashboard", page_icon="🏈", layout="wide")
+st.set_page_config(page_title="CFB Play by Play", page_icon="🏈", layout="wide")
 
 st.markdown("""
 <style>
