@@ -529,7 +529,7 @@ if st.session_state.selected_cfbd_id:
         key=lambda x: (x.startswith("OT"), int(x[1:]) if x.startswith("Q") else int(x[2:]) + 100))
     all_offenses   = sorted({e["offense"] for e in events if e["offense"]})
 
-        USE_Q  = st.checkbox("🏈 Filter by Quarter / OT", key="use_q")
+    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT", key="use_q")
     USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)", key="use_t")
     USE_TM = st.checkbox("🏟️ Filter by Possession", key="use_tm")
     USE_SC = st.checkbox("🔥 Scoring Plays Only", key="use_sc")
