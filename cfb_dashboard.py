@@ -529,119 +529,74 @@ if st.session_state.selected_cfbd_id:
         key=lambda x: (x.startswith("OT"), int(x[1:]) if x.startswith("Q") else int(x[2:]) + 100))
     all_offenses   = sorted({e["offense"] for e in events if e["offense"]})
 
-    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT", key="use_q")
-    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)", key="use_t")
-    USE_TM = st.checkbox("🏟️ Filter by Possession", key="use_tm")
-    USE_SC = st.checkbox("🔥 Scoring Plays Only", key="use_sc")
+    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT")
+    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)")
+    USE_TM = st.checkbox("🏟️ Filter by Possession")
+    USE_SC = st.checkbox("🔥 Scoring Plays Only")
 
-    sel_quarters = []
-    sel_offenses = []
-    sel_types = []
+    sel_quarters = sel_offenses = []
+    sel_types = []  # unused — kept for passes() compat
     START_DT = END_DT = None
 
     if USE_Q:
-        sel_quarters = st.multiselect(
-            "Quarters / OT",
-            options=all_periods,
-            key="sel_quarters"
-        )
-
+        sel_quarters = st.multiselect("Quarters / OT", options=all_periods)
     if USE_T:
         if not all_dts:
             st.warning("No wall-clock timestamps available.")
         else:
             tc1, tc2 = st.columns(2)
-
             with tc1:
-                sd = st.date_input(
-                    "Start date",
-                    gs_default.date(),
-                    key="sd"
-                )
-                st_ = st.time_input(
-                    "Start time",
-                    gs_default.time(),
-                    step=60,
-                    key="st_"
-                )
-
+                sd  = st.date_input("Start date", gs_default.date(), key="sd")
+                st_ = st.time_input("Start time", gs_default.time(), step=60, key="st_")
             with tc2:
-                ed = st.date_input(
-                    "End date",
-                    ge_default.date(),
-                    key="ed"
-                )
-                et_ = st.time_input(
-                    "End time",
-                    ge_default.time(),
-                    step=60,
-                    key="et_"
-                )
-
+                ed  = st.date_input("End date",   ge_default.date(), key="ed")
+                et_ = st.time_input("End time",   ge_default.time(), step=60, key="et_")
             START_DT = datetime.combine(sd, st_).replace(tzinfo=ET)
             END_DT   = datetime.combine(ed, et_).replace(tzinfo=ET)
-
     if USE_TM:
-        sel_offenses = st.multiselect(
-            "Offense",
-            options=all_offenses,
-            key="sel_offenses"
-        )
+        sel_offenses = st.multiselect("Offense", options=all_offenses)
 
-    # ─────────────────────────────────────────
-    # FILTER BUTTONS
-    # ─────────────────────────────────────────
-    apply_col, clear_col = st.columns(2)
-
-    with apply_col:
-        apply_filters = st.button("🚀 Apply Filters", use_container_width=True)
-
-    with clear_col:
-        clear_filters = st.button("❌ Remove Filters", use_container_width=True)
-
-    # APPLY
-    if apply_filters:
-
+    if st.button("🚀 Apply Filters"):
         def passes(e):
-            if USE_Q and sel_quarters and e["period_label"] not in sel_quarters:
-                return False
-
-            if USE_T and START_DT and END_DT:
-                if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT):
-                    return False
-
-            if USE_SC and not e["is_scoring"]:
-                return False
-
-            if USE_TM and sel_offenses and e["offense"] not in sel_offenses:
-                return False
-
+            if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
+            if USE_T  and START_DT and END_DT:
+                if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
+            if USE_SC and not e["is_scoring"]:                                        return False
+            if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
             return True
-
-        st.session_state.filtered_events = [
-            e for e in events if passes(e)
-        ]
-
+        st.session_state.filtered_events = [e for e in events if passes(e)]
         st.session_state.filters_applied = True
 
-    # CLEAR / RESET
-    if clear_filters:
+    fa       = st.session_state.filters_applied
+    filtered = st.session_state.filtered_events if fa else events
 
-        # reset checkboxes
-        st.session_state.use_q = False
-        st.session_state.use_t = False
-        st.session_state.use_tm = False
-        st.session_state.use_sc = False
+    if fa:
+        n, t = len(filtered), len(events)
+        if n == 0:
+            st.warning("⚠️ No plays match — adjust filters and click Apply again.")
+            st.stop()
+        if USE_Q:
+            st.info(f"🏈 Quarter filter: {', '.join(sel_quarters or ['none'])} — showing {n} of {t} plays")
+        if USE_T and START_DT and END_DT:
+            st.info(f"🕐 Time filter: {START_DT.strftime('%Y-%m-%d %H:%M ET')} → {END_DT.strftime('%Y-%m-%d %H:%M ET')} — showing {n} of {t} plays")
+        if USE_TM:
+            st.info(f"🏟️ Possession filter: {', '.join(sel_offenses or ['none'])} — showing {n} of {t} plays")
+        if USE_SC:
+            st.info(f"🏈 Scoring plays filter — showing {n} of {t} plays")
 
-        # reset multiselects
-        st.session_state.sel_quarters = []
-        st.session_state.sel_offenses = []
-
-        # clear filtered data
-        st.session_state.filtered_events = None
-        st.session_state.filters_applied = False
-
-        st.rerun()
+    for e in filtered:
+        st.subheader(f"{e['emoji']} {e['period_label']} | ⏱️ {e['clock_str']}")
+        meta_parts = []
+        if e["play_type"]: meta_parts.append(f"**{e['play_type']}**")
+        if e["offense"]:   meta_parts.append(f"{e['offense']} ball")
+        if meta_parts:     st.caption("  ·  ".join(meta_parts))
+        drive_str = f"🚗 **Drive {e['drive_num']}** &nbsp;|&nbsp; " if e["drive_num"] else ""
+        st.markdown(f"{drive_str}📊 **Score:** {e['score_str']}" + (" &nbsp; 🔥 *Scoring Play!*" if e["is_scoring"] else ""))
+        if e["down_str"]:        st.markdown(f"📏 **Down & Distance:** {e['down_str']}")
+        if e["yards_gained"] is not None: st.markdown(f"📐 **Yards Gained:** {e['yards_gained']}")
+        st.markdown(f"📋 **Play:** {e['desc']}")
+        st.markdown(f"🕐 **Wall Clock (ET):** `{e['action_dt_str']}`")
+        st.divider()
 
 
 # ══════════════════════════════════════════════════════════════
