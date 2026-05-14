@@ -556,16 +556,28 @@ if st.session_state.selected_cfbd_id:
     if USE_TM:
         sel_offenses = st.multiselect("Offense", options=all_offenses)
 
-    if st.button("🚀 Apply Filters"):
-        def passes(e):
-            if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
-            if USE_T  and START_DT and END_DT:
-                if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
-            if USE_SC and not e["is_scoring"]:                                        return False
-            if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
-            return True
-        st.session_state.filtered_events = [e for e in events if passes(e)]
-        st.session_state.filters_applied = True
+    f_btn_1, f_btn_2, f_btn_spacer = st.columns([1.5, 1.5, 5])
+
+    with f_btn_1:
+        if st.button("🚀 Apply Filters", use_container_width=True):
+            def passes(e):
+                if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
+                if USE_T  and START_DT and END_DT:
+                    if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
+                if USE_SC and not e["is_scoring"]:                                        return False
+                if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
+                return True
+            st.session_state.filtered_events = [e for e in events if passes(e)]
+            st.session_state.filters_applied = True
+            st.rerun()
+
+    with f_btn_2:
+        if st.button("🗑️ Remove Filters", use_container_width=True):
+            # Reset session state
+            st.session_state.filtered_events = None
+            st.session_state.filters_applied = False
+            # Rerunning resets the checkboxes/widgets to default (unchecked)
+            st.rerun()
 
     fa       = st.session_state.filters_applied
     filtered = st.session_state.filtered_events if fa else events
