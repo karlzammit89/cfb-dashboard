@@ -18,7 +18,7 @@ footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏈 College Football Dashboard")
+st.title("🏈 CFB Play by Play")
 
 # ──────────────────────────────────────────────────────────────
 # CONSTANTS
