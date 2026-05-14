@@ -23,7 +23,7 @@ st.title("🏈 College Football Dashboard")
 # ──────────────────────────────────────────────────────────────
 # CONSTANTS
 # ──────────────────────────────────────────────────────────────
-ET         = ZoneInfo("America/New_York")
+ET        = ZoneInfo("America/New_York")
 CFBD_BASE = "https://api.collegefootballdata.com"
 
 SCORING_EMOJI = {
@@ -59,7 +59,7 @@ def cfbd_headers() -> dict:
 # SESSION STATE
 # ──────────────────────────────────────────────────────────────
 _defaults = {
-    "selected_cfbd_id":    None,
+    "selected_cfbd_id":   None,
     "selected_away_name": "",
     "selected_home_name": "",
     "selected_away_abbr": "",
@@ -364,22 +364,22 @@ def get_events(cfbd_id: int, year: int, week: int) -> list:
 
         events.append({
             "period":        period_num,
-            "drive_num":      drive_num,
+            "drive_num":     drive_num,
             "period_label":  period_label(period_num),
-            "clock_str":      clock_val,
+            "clock_str":     clock_val,
             "desc":          desc,
-            "play_type":      play_type,
+            "play_type":     play_type,
             "away_score":    away_sc,
             "home_score":    home_sc,
-            "score_str":      f"{away_sc} – {home_sc}",
+            "score_str":     f"{away_sc} – {home_sc}",
             "is_scoring":    is_score,
-            "action_dt":      action_dt,
+            "action_dt":     action_dt,
             "action_dt_str": fmt_full_et(action_dt),
-            "down_str":       down_str,
+            "down_str":      down_str,
             "yards_gained":  p.get("yardsGained") or p.get("yards_gained"),
-            "offense":        offense,
-            "defense":        p.get("defense") or p.get("defenseTeam") or "",
-            "emoji":          _emoji(play_type, desc, is_score),
+            "offense":       offense,
+            "defense":       p.get("defense") or p.get("defenseTeam") or "",
+            "emoji":         _emoji(play_type, desc, is_score),
         })
 
     # Sort by wallclock ascending so plays appear in game order.
@@ -561,13 +561,13 @@ if st.session_state.selected_cfbd_id:
             if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
             if USE_T  and START_DT and END_DT:
                 if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
-            if USE_SC and not e["is_scoring"]:                                         return False
+            if USE_SC and not e["is_scoring"]:                                        return False
             if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
             return True
         st.session_state.filtered_events = [e for e in events if passes(e)]
         st.session_state.filters_applied = True
 
-    fa        = st.session_state.filters_applied
+    fa       = st.session_state.filters_applied
     filtered = st.session_state.filtered_events if fa else events
 
     if fa:
@@ -667,14 +667,15 @@ else:
             g_home      = g.get("homeTeam")   or g.get("home_team")  or "?"
             g_away_pts  = g.get("awayPoints") or g.get("away_points") or ""
             g_home_pts  = g.get("homePoints") or g.get("home_points") or ""
-            g_away_id   = g.get("awayId")     or g.get("away_id")     or ""
-            g_home_id   = g.get("homeId")     or g.get("home_id")     or ""
+            g_away_id   = g.get("awayId")     or g.get("away_id")    or ""
+            g_home_id   = g.get("homeId")     or g.get("home_id")    or ""
             g_id        = g.get("id")
             g_week      = g.get("week") or "?"
             g_stype     = (g.get("seasonType") or g.get("season_type") or "regular").lower()
             week_label  = "Postseason" if g_stype in ("postseason", "post") else f"Week {g_week}"
             score_str   = f"  {g_away_pts}–{g_home_pts}" if g_away_pts != "" else ""
-            
+            btn_label   = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  {week_label}"
+
             with st.container(border=True):
                 # Check if points are present (indicates game started/indexed)
                 has_started = g.get("awayPoints") is not None or g.get("away_points") is not None
@@ -716,4 +717,11 @@ else:
                     st.session_state.selected_away_name = g_away
                     st.session_state.selected_home_name = g_home
                     st.session_state.selected_away_abbr = g_away[:6].upper()
+                    st.session_state.selected_home_abbr = g_home[:6].upper()
+                    st.session_state.selected_away_eid  = g_away_id
+                    st.session_state.selected_home_eid  = g_home_id
+                    st.session_state.selected_year      = int(g.get("season") or g.get("year") or search_year)
+                    st.session_state.selected_week      = int(g.get("week") or 1)
+                    st.session_state.search_results     = []
+                    st.session_state.search_done        = False
                     st.rerun()
