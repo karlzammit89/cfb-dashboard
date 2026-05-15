@@ -715,7 +715,8 @@ else:
                 st.markdown(card_html, unsafe_allow_html=True)
                 btn_label = "▶ Open" if has_started else "⏳ Not Started"
                 if st.button(btn_label, key=f"pick_{g_id}", use_container_width=True,
-                             disabled=not has_started):
+                             disabled=not has_started,
+                             help="Data will be available once the game starts." if not has_started else None):
                     st.session_state.last_refresh = datetime.now(ET)
                     for k in ("cached_events", "cached_game_id", "filtered_events"):
                         st.session_state[k] = None
@@ -733,5 +734,3 @@ else:
                     st.session_state.search_results     = []
                     st.session_state.search_done        = False
                     st.rerun()
-                if not has_started:
-                    st.caption("Data will be available once the game starts.")
