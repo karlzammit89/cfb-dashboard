@@ -466,10 +466,11 @@ if st.session_state.selected_cfbd_id:
     with btn_col4:
         if st.session_state.last_refresh:
             st.markdown(
-                f"<div style='background:#2e7d32;color:white;padding:0.4rem 0.75rem;"
-                f"border-radius:0.4rem;font-size:0.875rem;font-weight:700;"
-                f"height:38px;display:flex;align-items:center;white-space:nowrap'>"
-                f"Last refresh {st.session_state.last_refresh.strftime('%H:%M:%S ET')}</div>",
+                f"<div style='display:table'><div style='display:table-cell;background:#2e7d32;"
+                f"color:white;padding:6px 12px;border-radius:6px;font-size:14px;"
+                f"font-weight:700;white-space:nowrap'>"
+                f"Last refresh {st.session_state.last_refresh.strftime('%H:%M:%S ET')}"
+                f"</div></div>",
                 unsafe_allow_html=True,
             )
 
