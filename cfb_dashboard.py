@@ -465,11 +465,8 @@ if st.session_state.selected_cfbd_id:
 
     with btn_col4:
         if st.session_state.last_refresh:
-            st.markdown(
-                f"<div style='background:#2e7d32;color:white;padding:8px 12px;"
-                f"border-radius:4px;font-size:14px;font-weight:bold;white-space:nowrap'>"
-                f"Last refresh {st.session_state.last_refresh.strftime('%H:%M:%S ET')}</div>",
-                unsafe_allow_html=True,
+            st.caption(
+                f"🔄 {st.session_state.last_refresh.strftime('%H:%M:%S ET')}"
             )
 
     with st.spinner("Loading play-by-play…"):
@@ -603,13 +600,18 @@ if st.session_state.selected_cfbd_id:
         if af.get("scoring"):
             st.info(f"🏈 Scoring plays filter — showing {n} of {t} plays")
 
-    # Fix 1: single st.markdown per play instead of 5-6 separate calls
     for e in filtered:
-        st.markdown(
-            f"### {e['emoji']} {e['period_label']} | ⏱️ {e['clock_str']}\n\n"
-            + e["card_html"],
-            unsafe_allow_html=True,
-        )
+        st.subheader(f"{e['emoji']} {e['period_label']} | ⏱️ {e['clock_str']}")
+        meta_parts = []
+        if e["play_type"]: meta_parts.append(f"**{e['play_type']}**")
+        if e["offense"]:   meta_parts.append(f"{e['offense']} ball")
+        if meta_parts:     st.caption("  ·  ".join(meta_parts))
+        drive_str = f"🚗 **Drive {e['drive_num']}** &nbsp;|&nbsp; " if e["drive_num"] else ""
+        st.markdown(f"{drive_str}📊 **Score:** {e['score_str']}" + (" &nbsp; 🔥 *Scoring Play!*" if e["is_scoring"] else ""))
+        if e["down_str"]:        st.markdown(f"📏 **Down & Distance:** {e['down_str']}")
+        if e["yards_gained"] is not None: st.markdown(f"📐 **Yards Gained:** {e['yards_gained']}")
+        st.markdown(f"📋 **Play:** {e['desc']}")
+        st.markdown(f"🕐 **Wall Clock (ET):** `{e['action_dt_str']}`")
         st.divider()
 
 # ══════════════════════════════════════════════════════════════
