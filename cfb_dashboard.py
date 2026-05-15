@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 # ──────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ──────────────────────────────────────────────────────────────
-st.set_page_config(page_title="CFB Play by Play", page_icon="🏈", layout="wide")
+st.set_page_config(page_title="CFB Dashboard", page_icon="🏈", layout="wide")
 
 st.markdown("""
 <style>
@@ -18,7 +18,7 @@ footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏈 CFB Play by Play")
+st.title("🏈 College Football Dashboard")
 
 # ──────────────────────────────────────────────────────────────
 # CONSTANTS
@@ -72,7 +72,6 @@ _defaults = {
     "cached_game_id":     None,
     "filtered_events":    None,
     "filters_applied":    False,
-    "last_refresh":       None,
     "search_results":     [],
     "search_done":        False,
     "last_search_year":    None,
@@ -421,59 +420,23 @@ if st.session_state.selected_cfbd_id:
     _last_year = st.session_state.get("last_search_year") or ""
     _back_label = f"⬅ Back to {_last_team} {_last_year}" if _last_team else "⬅ Back"
 
-    # New 5-column layout: [Back, Back to Search, Refresh, Badge, Spacer]
-    btn_col1, btn_col2, btn_col3, btn_col4, _ = st.columns([1, 2, 1, 1.5, 2.5], gap="small")
-    
+    btn_col1, btn_col2, _ = st.columns([1, 2, 5], gap="small")
     with btn_col1:
         if st.button("⬅ Back", use_container_width=True):
             for k in ("cached_events", "cached_game_id", "filtered_events"):
                 st.session_state[k] = None
             st.session_state.filters_applied  = False
             st.session_state.selected_cfbd_id = None
-            st.session_state.last_refresh     = None 
             st.rerun()
-
     with btn_col2:
         if _last_team and st.button(_back_label, use_container_width=True):
             for k in ("cached_events", "cached_game_id", "filtered_events"):
                 st.session_state[k] = None
             st.session_state.filters_applied  = False
             st.session_state.selected_cfbd_id = None
-            st.session_state.search_done      = True
-            st.session_state.search_results   = st.session_state.get("last_search_results", [])
-            st.session_state.last_refresh     = None 
+            st.session_state.search_done     = True
+            st.session_state.search_results  = st.session_state.get("last_search_results", [])
             st.rerun()
-            
-    with btn_col3:
-        if st.button("🔄 Refresh", use_container_width=True):
-            st.session_state.cached_events  = None
-            st.session_state.cached_game_id = None
-            st.session_state.last_refresh   = datetime.now(ET)
-            st.cache_data.clear()
-            st.rerun()
-
-    # Move the badge into btn_col4 and remove the vertical margins
-    with btn_col4:
-        if st.session_state.last_refresh:
-            st.markdown(
-                f"""
-                <div style="
-                    background-color: #2e7d32; 
-                    color: white; 
-                    padding: 8px 12px; 
-                    border-radius: 4px; 
-                    font-size: 14px; 
-                    font-weight: bold;
-                    width: fit-content;
-                    margin: 0;          /* Left-align to stay close to Refresh */
-                    display: block;
-                    white-space: nowrap;
-                ">
-                    Last refresh {st.session_state.last_refresh.strftime('%H:%M:%S ET')}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
 
     with st.spinner("Loading play-by-play…"):
         events = get_events(cfbd_id, g_year, g_week)
@@ -529,15 +492,10 @@ if st.session_state.selected_cfbd_id:
         key=lambda x: (x.startswith("OT"), int(x[1:]) if x.startswith("Q") else int(x[2:]) + 100))
     all_offenses   = sorted({e["offense"] for e in events if e["offense"]})
 
-    if "filter_version" not in st.session_state:
-        st.session_state.filter_version = 0
-
-    # Append the version to the keys
-    v = st.session_state.filter_version
-    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT", key=f"q_{v}")
-    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)", key=f"t_{v}")
-    USE_TM = st.checkbox("🏟️ Filter by Possession", key=f"tm_{v}")
-    USE_SC = st.checkbox("🔥 Scoring Plays Only", key=f"sc_{v}")
+    USE_Q  = st.checkbox("🏈 Filter by Quarter / OT")
+    USE_T  = st.checkbox("🕐 Filter by Actual Time (ET)")
+    USE_TM = st.checkbox("🏟️ Filter by Possession")
+    USE_SC = st.checkbox("🔥 Scoring Plays Only")
 
     sel_quarters = sel_offenses = []
     sel_types = []  # unused — kept for passes() compat
@@ -561,31 +519,16 @@ if st.session_state.selected_cfbd_id:
     if USE_TM:
         sel_offenses = st.multiselect("Offense", options=all_offenses)
 
-    f_btn_1, f_btn_2, f_btn_spacer = st.columns([1.5, 1.5, 5])
-
-    with f_btn_1:
-        if st.button("🚀 Apply Filters", use_container_width=True):
-            def passes(e):
-                if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
-                if USE_T  and START_DT and END_DT:
-                    if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
-                if USE_SC and not e["is_scoring"]:                                        return False
-                if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
-                return True
-            st.session_state.filtered_events = [e for e in events if passes(e)]
-            st.session_state.filters_applied = True
-            st.rerun()
-
-    with f_btn_2:
-        if st.button("🗑️ Remove Filters", use_container_width=True):
-            # 1. Reset the filter data
-            st.session_state.filtered_events = None
-            st.session_state.filters_applied = False
-            
-            # 2. Increment version to reset all checkboxes at once
-            st.session_state.filter_version += 1
-            
-            st.rerun()
+    if st.button("🚀 Apply Filters"):
+        def passes(e):
+            if USE_Q  and sel_quarters  and e["period_label"] not in sel_quarters:  return False
+            if USE_T  and START_DT and END_DT:
+                if not e["action_dt"] or not (START_DT <= e["action_dt"] <= END_DT): return False
+            if USE_SC and not e["is_scoring"]:                                        return False
+            if USE_TM and sel_offenses and e["offense"]   not in sel_offenses:       return False
+            return True
+        st.session_state.filtered_events = [e for e in events if passes(e)]
+        st.session_state.filters_applied = True
 
     fa       = st.session_state.filters_applied
     filtered = st.session_state.filtered_events if fa else events
@@ -697,20 +640,12 @@ else:
             btn_label   = f"{g_away} @ {g_home}{score_str}  ·  {g_date}  ·  {week_label}"
 
             with st.container(border=True):
-                # Check if points are present (indicates game started/indexed)
-                has_started = g.get("awayPoints") is not None or g.get("away_points") is not None
-                
-                # Dynamic labels based on game state
-                btn_label = "▶ Open" if has_started else "⏳ Not Started"
-                btn_help = "Data will be available once the game starts." if not has_started else "View game data"
-
                 away_pts_str = str(g_away_pts) if g_away_pts != "" else ""
                 home_pts_str = str(g_home_pts) if g_home_pts != "" else ""
                 _a_logo = f"<img src='{espn_logo(g_away_id)}' style='width:22px;height:22px;object-fit:contain'/>" if g_away_id else "<span style='width:22px;display:inline-block'></span>"
                 _h_logo = f"<img src='{espn_logo(g_home_id)}' style='width:22px;height:22px;object-fit:contain'/>" if g_home_id else "<span style='width:22px;display:inline-block'></span>"
                 _a_score = f"<span style='margin-left:auto;font-size:15px;font-weight:700;color:#aaa'>{away_pts_str}</span>" if away_pts_str else ""
                 _h_score = f"<span style='margin-left:auto;font-size:15px;font-weight:700;color:#aaa'>{home_pts_str}</span>" if home_pts_str else ""
-                
                 card_html = (
                     f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:3px'>{_a_logo}"
                     f"<span style='font-size:15px;font-weight:700'>{g_away}</span>{_a_score}</div>"
@@ -720,16 +655,7 @@ else:
                     f"{g_date} &middot; {week_label}</div>"
                 )
                 st.markdown(card_html, unsafe_allow_html=True)
-                
-                # Button is disabled if game hasn't started
-                if st.button(
-                    btn_label, 
-                    key=f"pick_{g_id}", 
-                    use_container_width=True, 
-                    disabled=not has_started,
-                    help=btn_help
-                ):
-                    st.session_state.last_refresh = datetime.now(ET)
+                if st.button("\u25b6 Open", key=f"pick_{g_id}", use_container_width=True):
                     for k in ("cached_events", "cached_game_id", "filtered_events"):
                         st.session_state[k] = None
                     st.session_state.filters_applied    = False
