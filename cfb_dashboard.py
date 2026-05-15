@@ -465,8 +465,12 @@ if st.session_state.selected_cfbd_id:
 
     with btn_col4:
         if st.session_state.last_refresh:
-            st.caption(
-                f"🔄 {st.session_state.last_refresh.strftime('%H:%M:%S ET')}"
+            st.markdown(
+                f"<div style='background:#2e7d32;color:white;padding:0.4rem 0.75rem;"
+                f"border-radius:0.4rem;font-size:0.875rem;font-weight:700;"
+                f"height:38px;display:flex;align-items:center;white-space:nowrap'>"
+                f"Last refresh {st.session_state.last_refresh.strftime('%H:%M:%S ET')}</div>",
+                unsafe_allow_html=True,
             )
 
     with st.spinner("Loading play-by-play…"):
