@@ -72,6 +72,7 @@ _defaults = {
     "cached_game_id":      None,
     "filtered_events":     None,
     "filters_applied":     False,
+    "sort_newest_first":   False,   # A: render-time sort direction (default oldest)
     # Fix 4: snapshot of what was active when Apply was last clicked
     "applied_filters":     {},
     "last_refresh":        None,
@@ -430,7 +431,7 @@ if st.session_state.selected_cfbd_id:
     _last_year  = st.session_state.get("last_search_year") or ""
     _back_label = f"⬅ Back to {_last_team} {_last_year}" if _last_team else "⬅ Back"
 
-    btn_col1, btn_col2, btn_col3, btn_col4, _ = st.columns([1, 2, 1, 1.5, 2.5], gap="small")
+    btn_col1, btn_col2, btn_col3, btn_col_sort, btn_col4, _ = st.columns([1, 2, 1, 1.3, 1.5, 1.2], gap="small")
 
     with btn_col1:
         if st.button("⬅ Back", use_container_width=True):
@@ -461,6 +462,16 @@ if st.session_state.selected_cfbd_id:
             st.session_state.cached_events  = None
             st.session_state.cached_game_id = None
             st.session_state.last_refresh   = datetime.now(ET)
+            st.rerun()
+
+    with btn_col_sort:
+        # A: label shows CURRENT state; click flips direction. Reversal is
+        # applied at render time only (see filtered[::-1] below).
+        _newest = st.session_state.sort_newest_first
+        _lbl    = "↑ Newest first" if _newest else "↓ Oldest first"
+        _type   = "primary" if _newest else "secondary"
+        if st.button(_lbl, use_container_width=True, type=_type):
+            st.session_state.sort_newest_first = not _newest
             st.rerun()
 
     with btn_col4:
@@ -510,9 +521,9 @@ if st.session_state.selected_cfbd_id:
     total  = len(events)
     pct    = int(100 * has_wc / total) if total else 0
     if pct == 100:
-        st.success(f"🕐 Wall-clock timestamps on all {total} plays")
+        st.success(f"🕐 Timestamps on all {total} plays")
     elif pct >= 70:
-        st.info(f"🕐 Wall-clock timestamps on {has_wc}/{total} plays ({pct}%)")
+        st.info(f"🕐 Timestamps on {has_wc}/{total} plays ({pct}%)")
     else:
         st.warning(f"🕐 Wall-clock sparse: {has_wc}/{total} plays ({pct}%) — time filter may return few results")
 
@@ -539,7 +550,7 @@ if st.session_state.selected_cfbd_id:
         sel_quarters = st.multiselect("Quarters / OT", options=all_periods)
     if USE_T:
         if not all_dts:
-            st.warning("No wall-clock timestamps available.")
+            st.warning("No Timestamps available.")
         else:
             tc1, tc2 = st.columns(2)
             with tc1:
@@ -587,6 +598,9 @@ if st.session_state.selected_cfbd_id:
 
     fa       = st.session_state.filters_applied
     filtered = st.session_state.filtered_events if fa else events
+    # A: reverse at render time only — never mutate the stored list.
+    if st.session_state.sort_newest_first:
+        filtered = filtered[::-1]
 
     # Fix 4: banners read from the Apply-time snapshot, not live checkboxes
     if fa:
@@ -616,7 +630,7 @@ if st.session_state.selected_cfbd_id:
         if e["down_str"]:        st.markdown(f"📏 **Down & Distance:** {e['down_str']}")
         if e["yards_gained"] is not None: st.markdown(f"📐 **Yards Gained:** {e['yards_gained']}")
         st.markdown(f"📋 **Play:** {e['desc']}")
-        st.markdown(f"🕐 **Wall Clock (ET):** `{e['action_dt_str']}`")
+        st.markdown(f"🕐 **Time (ET):** `{e['action_dt_str']}`")
         st.divider()
 
 # ══════════════════════════════════════════════════════════════
